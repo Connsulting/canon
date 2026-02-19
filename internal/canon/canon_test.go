@@ -1,0 +1,383 @@
+package canon
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestInitLayoutCreatesCanonSourceFolders(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	expected := []string{
+		".canon/specs",
+		".canon/ledger",
+		".canon/sources",
+		".canon/conflict-reports",
+		"state/interactions",
+	}
+
+	for _, rel := range expected {
+		if !isDir(filepath.Join(root, rel)) {
+			t.Fatalf("missing directory: %s", rel)
+		}
+	}
+}
+
+func TestIngestFreeformAndLogNewestFirst(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	first, err := Ingest(root, IngestInput{
+		Text:   "Users can sign in with email and password.",
+		Title:  "Authentication",
+		Domain: "auth",
+	})
+	if err != nil {
+		t.Fatalf("Ingest first failed: %v", err)
+	}
+
+	second, err := Ingest(root, IngestInput{
+		Text:   "Each user gets per minute API limits.",
+		Title:  "Rate Limits",
+		Domain: "api",
+	})
+	if err != nil {
+		t.Fatalf("Ingest second failed: %v", err)
+	}
+
+	entries, err := LoadLedger(root)
+	if err != nil {
+		t.Fatalf("LoadLedger failed: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 ledger entries, got %d", len(entries))
+	}
+
+	if entries[0].SpecID != second.SpecID {
+		t.Fatalf("expected newest first in log order, got first=%s second=%s", entries[0].SpecID, second.SpecID)
+	}
+	if entries[0].Title == "" {
+		t.Fatalf("expected ledger entry to include title")
+	}
+
+	if entries[1].SpecID != first.SpecID {
+		t.Fatalf("expected older second in log order, got %s", entries[1].SpecID)
+	}
+}
+
+func TestRenderDeterministic(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	specs := []IngestInput{
+		{
+			Text: `---
+id: spec-101
+type: feature
+title: Authentication
+domain: auth
+status: active
+created: 2026-02-19T10:00:00Z
+depends_on: []
+touched_domains: [auth]
+---
+## Behaviors
+Users can sign in with email and password.`,
+		},
+		{
+			Text: `---
+id: spec-102
+type: feature
+title: API Rate Limits
+domain: api
+status: active
+created: 2026-02-19T10:10:00Z
+depends_on: [spec-101]
+touched_domains: [api, auth]
+---
+## Behaviors
+Each authenticated user has per minute request limits by tier.`,
+		},
+		{
+			Text: `---
+id: spec-103
+type: feature
+title: Billing Grace Period
+domain: billing
+status: active
+created: 2026-02-19T10:20:00Z
+depends_on: [spec-102]
+touched_domains: [billing, api]
+---
+## Behaviors
+After payment failure the account enters a three day grace period.`,
+		},
+		{
+			Text: `---
+id: spec-104
+type: technical
+title: API Cache Policy
+domain: api
+status: active
+created: 2026-02-19T10:30:00Z
+depends_on: [spec-102]
+touched_domains: [api]
+---
+## Behaviors
+Cache successful GET responses for thirty seconds.`,
+		},
+	}
+
+	for _, in := range specs {
+		if _, err := Ingest(root, in); err != nil {
+			t.Fatalf("Ingest failed: %v", err)
+		}
+	}
+
+	first, err := Render(root, RenderOptions{Write: true})
+	if err != nil {
+		t.Fatalf("first Render failed: %v", err)
+	}
+
+	second, err := Render(root, RenderOptions{Write: true})
+	if err != nil {
+		t.Fatalf("second Render failed: %v", err)
+	}
+
+	if first.FilesWritten < 5 {
+		t.Fatalf("expected initial write to create files, got %d", first.FilesWritten)
+	}
+
+	if second.FilesWritten != 0 {
+		t.Fatalf("expected deterministic no-op second render, got %d", second.FilesWritten)
+	}
+
+	apiState := readFile(t, filepath.Join(root, "state/api.md"))
+	if !strings.Contains(apiState, "Contributing specs: spec-102, spec-103, spec-104") {
+		t.Fatalf("api state missing contributors header")
+	}
+
+	manifest := readFile(t, filepath.Join(root, "state/manifest.yaml"))
+	if !strings.Contains(manifest, "total_specs: 4") {
+		t.Fatalf("manifest missing total spec count")
+	}
+}
+
+func TestShowSpecReturnsCanonicalContent(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	result, err := Ingest(root, IngestInput{
+		Text:   "Voice dictated behavior for a new workflow.",
+		Title:  "Voice Capture",
+		Domain: "product",
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	relPath, text, err := ShowSpec(root, result.SpecID)
+	if err != nil {
+		t.Fatalf("ShowSpec failed: %v", err)
+	}
+
+	if !strings.HasPrefix(relPath, ".canon/specs/") {
+		t.Fatalf("unexpected canonical path: %s", relPath)
+	}
+	if !strings.Contains(text, "id: "+result.SpecID) {
+		t.Fatalf("show output missing spec id")
+	}
+	if !strings.Contains(text, "domain: product") {
+		t.Fatalf("show output missing domain")
+	}
+}
+
+func TestIngestFromResponseBlocksConflictAndWritesReport(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	base, err := Ingest(root, IngestInput{
+		Text:   "Existing auth behavior. Users must retain access to audit history.",
+		Title:  "Audit Access",
+		Domain: "auth",
+	})
+	if err != nil {
+		t.Fatalf("base ingest failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "test-response.json")
+	response := `{
+  "model": "claude-headless",
+  "canonical_spec": {
+    "id": "spec-200",
+    "type": "feature",
+    "title": "Audit Restrictions",
+    "domain": "auth",
+    "status": "active",
+    "created": "2026-02-19T16:00:00Z",
+    "depends_on": [],
+    "touched_domains": ["auth"],
+    "body": "Users must not retain access to audit history."
+  },
+  "conflict_check": {
+    "has_conflicts": true,
+    "summary": "Conflicts with existing immutable audit access behavior.",
+    "conflicts": [
+      {"existing_spec_id": "` + base.SpecID + `", "reason": "Direct contradiction on audit access retention."}
+    ]
+  }
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	_, err = Ingest(root, IngestInput{
+		Text:         "AI candidate spec input",
+		ConflictMode: "from-response",
+		ResponseFile: responsePath,
+		AIProvider:   "claude",
+	})
+	if err == nil {
+		t.Fatalf("expected merge conflict error from AI response")
+	}
+	if !strings.Contains(err.Error(), "merge conflict detected") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	reportFiles, err := filepath.Glob(filepath.Join(root, ".canon", "conflict-reports", "*.yaml"))
+	if err != nil {
+		t.Fatalf("glob conflict reports failed: %v", err)
+	}
+	if len(reportFiles) == 0 {
+		t.Fatalf("expected conflict report to be written")
+	}
+}
+
+func TestIngestPreservesSourceWhenAIBodyIsCompressed(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	raw := strings.Repeat("This requirement must be preserved with detail and context. ", 40)
+	responsePath := filepath.Join(root, "compress-response.json")
+	response := `{
+  "model": "codex-headless",
+  "canonical_spec": {
+    "id": "spec-300",
+    "type": "feature",
+    "title": "Compressed Spec",
+    "domain": "api",
+    "status": "active",
+    "created": "2026-02-19T17:00:00Z",
+    "depends_on": [],
+    "touched_domains": ["api"],
+    "body": "Too short."
+  },
+  "conflict_check": {
+    "has_conflicts": false,
+    "summary": "No conflict",
+    "conflicts": []
+  }
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	result, err := Ingest(root, IngestInput{
+		IngestKind:   "file",
+		Text:         raw,
+		ConflictMode: "from-response",
+		ResponseFile: responsePath,
+		AIProvider:   "codex",
+	})
+	if err != nil {
+		t.Fatalf("expected ingest success with source preservation: %v", err)
+	}
+	specText := readFile(t, filepath.Join(root, ".canon", "specs", "spec-300.spec.md"))
+	if !strings.Contains(specText, "This requirement must be preserved with detail and context.") {
+		t.Fatalf("expected canonical spec to preserve source body")
+	}
+	if !strings.Contains(specText, "## AI Enhancements") {
+		t.Fatalf("expected AI enhancement section when AI adds extra lines")
+	}
+	if result.SpecPath == "" {
+		t.Fatalf("expected spec path in ingest result")
+	}
+}
+
+func TestIngestFromResponsePreservesSourceCreatedTimestamp(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "created-response.json")
+	response := `{
+  "model": "codex-headless",
+  "canonical_spec": {
+    "id": "spec-400",
+    "type": "technical",
+    "title": "Created Timestamp Check",
+    "domain": "canon-cli",
+    "status": "active",
+    "created": "2026-02-19T00:00:00Z",
+    "depends_on": [],
+    "touched_domains": ["canon-cli"],
+    "body": "Body from AI."
+  },
+  "conflict_check": {
+    "has_conflicts": false,
+    "summary": "No conflict",
+    "conflicts": []
+  }
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	source := `---
+id: spec-400
+type: technical
+title: "Created Timestamp Check"
+domain: canon-cli
+status: active
+created: 2026-02-19T17:30:45Z
+depends_on: []
+touched_domains: [canon-cli]
+---
+## Notes
+Keep source created timestamp exact.`
+
+	if _, err := Ingest(root, IngestInput{
+		IngestKind:   "file",
+		Text:         source,
+		ConflictMode: "from-response",
+		ResponseFile: responsePath,
+		AIProvider:   "codex",
+	}); err != nil {
+		t.Fatalf("ingest failed: %v", err)
+	}
+
+	specText := readFile(t, filepath.Join(root, ".canon", "specs", "spec-400.spec.md"))
+	if !strings.Contains(specText, "created: 2026-02-19T17:30:45Z") {
+		t.Fatalf("expected canonical spec to preserve source created timestamp")
+	}
+	if strings.Contains(specText, "created: 2026-02-19T00:00:00Z") {
+		t.Fatalf("expected canonical spec to reject AI-rounded midnight created timestamp")
+	}
+}

@@ -1,0 +1,22 @@
+specs:
+  canon-mvp-phase1:
+    title: "Canon MVP Phase 1: Spec Ingest and Deterministic State Render"
+    type: technical
+    domain: canon-cli
+    touches: [canon-cli, config, ingest, ledger, state-render]
+    depends_on: []
+    depended_on_by: []
+domains:
+  canon-cli:
+    specs: [canon-mvp-phase1]
+  config:
+    specs: [canon-mvp-phase1]
+  ingest:
+    specs: [canon-mvp-phase1]
+  ledger:
+    specs: [canon-mvp-phase1]
+  state-render:
+    specs: [canon-mvp-phase1]
+cross_domain_edges:
+  - spec: canon-mvp-phase1
+    domains: [canon-cli, config, ingest, ledger, state-render]
