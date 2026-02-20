@@ -49,6 +49,17 @@ type IngestResult struct {
 	Parents    []string
 }
 
+type ResetInput struct {
+	RefSpecID string
+}
+
+type ResetResult struct {
+	KeptSpecID    string
+	LedgerDeleted int
+	SpecDeleted   int
+	SourceDeleted int
+}
+
 type RenderOptions struct {
 	Write        bool
 	AIMode       string

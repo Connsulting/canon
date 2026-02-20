@@ -39,6 +39,8 @@ func run(args []string) error {
 		return cmdLog(args[1:])
 	case "show":
 		return cmdShow(args[1:])
+	case "reset":
+		return cmdReset(args[1:])
 	case "render":
 		return cmdRender(args[1:])
 	case "status":
@@ -338,6 +340,34 @@ func cmdShow(args []string) error {
 	return nil
 }
 
+func cmdReset(args []string) error {
+	fs := flag.NewFlagSet("reset", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("reset requires <spec-id>")
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+	result, err := canon.Reset(abs, canon.ResetInput{
+		RefSpecID: fs.Arg(0),
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("reset to %s\n", result.KeptSpecID)
+	fmt.Printf("deleted ledger entries: %d\n", result.LedgerDeleted)
+	fmt.Printf("deleted spec files: %d\n", result.SpecDeleted)
+	fmt.Printf("deleted source files: %d\n", result.SourceDeleted)
+	return nil
+}
+
 func cmdRender(args []string) error {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -472,6 +502,7 @@ func printUsage() {
 	fmt.Println("  raw     synthesize a spec from freeform text or voice note content")
 	fmt.Println("  log     show spec ledger; supports --graph and Git-style filters")
 	fmt.Println("  show    show a canonical spec by id")
+	fmt.Println("  reset   reset canon history to a specific spec id")
 	fmt.Println("  index   build deterministic index")
 	fmt.Println("  render  render expected state from canonical specs")
 	fmt.Println("  status  show repository summary")
