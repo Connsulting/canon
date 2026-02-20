@@ -19,10 +19,33 @@ Phase 1 only:
 - `go run ./cmd/canon render --write`
 - `go run ./cmd/canon status`
 
+Spec ID convention:
+- Use 7-char SHA-like hex IDs (for example `a1b2c3d`) for consistency with git-style history views.
+- Canon-generated fallback IDs also use the same 7-char SHA-like format.
+
 Render options:
 - `--ai off|auto|from-response` (default: `auto`)
 - `--ai-provider codex|claude` (default from config)
 - `--response-file <path>` (required for `from-response`; implied when provided with `auto`)
+
+Log options:
+- `--graph` render dependency graph view from `depends_on`
+- `--oneline` compact one-line rows
+- `--all` include all disconnected heads (default scopes to primary head)
+- `--grep <text>` case-insensitive title filter
+- `--domain <name>` exact domain filter
+- `--type <name>` exact type filter
+- `--color auto|always|never` ANSI color output (default: `auto`)
+- `--date absolute|relative` timestamp display mode (default: `absolute`)
+- `-n <count>` max rows (defaults to 50)
+
+Examples:
+
+```bash
+go run ./cmd/canon log --graph --oneline --all -n 100
+go run ./cmd/canon log --oneline --domain api --type feature --grep rate
+go run ./cmd/canon log --graph --oneline --all --date relative --color always -n 100
+```
 
 ## Interactive Raw Flow
 Run:

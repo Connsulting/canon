@@ -1,5 +1,5 @@
 ---
-id: canon-mvp-phase1
+id: e1bcd34
 type: technical
 title: "Canon MVP Phase 1: Spec Ingest and Deterministic State Render"
 domain: canon-cli

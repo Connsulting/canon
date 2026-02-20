@@ -73,6 +73,63 @@ func TestIngestFreeformAndLogNewestFirst(t *testing.T) {
 	}
 }
 
+func TestIngestInheritsParentsIntoDependsOn(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	first, err := Ingest(root, IngestInput{
+		Text:   "Base requirement",
+		Title:  "Base",
+		Domain: "core",
+	})
+	if err != nil {
+		t.Fatalf("first ingest failed: %v", err)
+	}
+
+	second, err := Ingest(root, IngestInput{
+		Text:   "Next requirement",
+		Title:  "Next",
+		Domain: "core",
+	})
+	if err != nil {
+		t.Fatalf("second ingest failed: %v", err)
+	}
+
+	secondSpec, err := loadSpecByID(root, second.SpecID)
+	if err != nil {
+		t.Fatalf("loadSpecByID failed: %v", err)
+	}
+	if len(secondSpec.DependsOn) != 1 || secondSpec.DependsOn[0] != first.SpecID {
+		t.Fatalf("expected second depends_on to include parent %s, got %v", first.SpecID, secondSpec.DependsOn)
+	}
+}
+
+func TestIngestGeneratedSpecIDUsesCanonPrefix(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	result, err := Ingest(root, IngestInput{
+		Text:   "Generated id behavior.",
+		Title:  "ID Policy",
+		Domain: "canon-cli",
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	if len(result.SpecID) != 7 {
+		t.Fatalf("expected generated spec id length 7, got %d (%s)", len(result.SpecID), result.SpecID)
+	}
+	for _, ch := range result.SpecID {
+		if !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f') {
+			t.Fatalf("expected hex generated spec id, got %s", result.SpecID)
+		}
+	}
+}
+
 func TestRenderDeterministic(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {

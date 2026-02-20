@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,4 +82,76 @@ JSON
 	} else if !os.IsNotExist(err) {
 		t.Fatalf("failed checking state2 folder: %v", err)
 	}
+}
+
+func TestLogGraphFlagsRenderDependencyGraph(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:   "Base auth requirement.",
+		ID:     "spec-a",
+		Title:  "Auth Base",
+		Type:   "feature",
+		Domain: "auth",
+	}); err != nil {
+		t.Fatalf("Ingest spec-a failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:      "API depends on auth.",
+		ID:        "spec-b",
+		Title:     "Rate Limits",
+		Type:      "feature",
+		Domain:    "api",
+		DependsOn: []string{"spec-a"},
+	}); err != nil {
+		t.Fatalf("Ingest spec-b failed: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"log", "--root", root, "--graph", "--oneline", "--all"}); err != nil {
+			t.Fatalf("log command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "* spec-b") {
+		t.Fatalf("expected spec-b graph node, got:\n%s", out)
+	}
+	if !strings.Contains(out, "* spec-a") {
+		t.Fatalf("expected spec-a graph node, got:\n%s", out)
+	}
+	if strings.Contains(out, "|->") {
+		t.Fatalf("did not expect separate dependency edge lines, got:\n%s", out)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	originalStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = originalStdout
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("closing writer failed: %v", err)
+	}
+	out, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("reading captured output failed: %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("closing reader failed: %v", err)
+	}
+	return string(out)
 }

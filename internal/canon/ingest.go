@@ -1,6 +1,8 @@
 package canon
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -54,19 +56,6 @@ func Ingest(root string, input IngestInput) (IngestResult, error) {
 		}
 	}
 
-	specText := canonicalSpecText(spec)
-	specRelPath := filepath.ToSlash(filepath.Join(".canon", "specs", specFileName(spec.ID)))
-	specAbsPath := filepath.Join(root, specRelPath)
-	if _, err := writeTextIfChanged(specAbsPath, specText); err != nil {
-		return IngestResult{}, err
-	}
-	sourceText := strings.TrimRight(rawText, "\n") + "\n"
-	sourceRelPath := filepath.ToSlash(filepath.Join(".canon", "sources", spec.ID+".source.md"))
-	sourceAbsPath := filepath.Join(root, sourceRelPath)
-	if _, err := writeTextIfChanged(sourceAbsPath, sourceText); err != nil {
-		return IngestResult{}, err
-	}
-
 	ledgerEntries, err := LoadLedger(root)
 	if err != nil {
 		return IngestResult{}, err
@@ -80,6 +69,22 @@ func Ingest(root string, input IngestInput) (IngestResult, error) {
 		} else {
 			parents = []string{heads[len(heads)-1]}
 		}
+	}
+	// Keep dependency traversal commit-like by inheriting lineage edges.
+	// Explicit depends_on entries are preserved and merged.
+	spec.DependsOn = normalizeList(append(spec.DependsOn, parents...))
+
+	specText := canonicalSpecText(spec)
+	specRelPath := filepath.ToSlash(filepath.Join(".canon", "specs", specFileName(spec.ID)))
+	specAbsPath := filepath.Join(root, specRelPath)
+	if _, err := writeTextIfChanged(specAbsPath, specText); err != nil {
+		return IngestResult{}, err
+	}
+	sourceText := strings.TrimRight(rawText, "\n") + "\n"
+	sourceRelPath := filepath.ToSlash(filepath.Join(".canon", "sources", spec.ID+".source.md"))
+	sourceAbsPath := filepath.Join(root, sourceRelPath)
+	if _, err := writeTextIfChanged(sourceAbsPath, sourceText); err != nil {
+		return IngestResult{}, err
 	}
 
 	entry := LedgerEntry{
@@ -262,7 +267,9 @@ func normalizeSpecDefaults(spec Spec) (Spec, error) {
 }
 
 func generatedSpecID(now time.Time, title string) string {
-	return "spec-" + now.Format("20060102150405") + "-" + slugify(title)
+	seed := now.UTC().Format(time.RFC3339Nano) + "|" + strings.ToLower(strings.TrimSpace(title))
+	sum := sha256.Sum256([]byte(seed))
+	return hex.EncodeToString(sum[:])[:7]
 }
 
 func ledgerFileName(ingestedAt string, specID string) string {

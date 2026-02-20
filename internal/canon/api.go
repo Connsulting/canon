@@ -12,3 +12,11 @@ func BuildIndexYAMLForCLI(specs []Spec) string {
 func WriteTextIfChangedForCLI(path string, content string) (bool, error) {
 	return writeTextIfChanged(path, content)
 }
+
+func BuildLogViewForCLI(root string, opts LogOptions) ([]LogNode, error) {
+	return BuildLogView(root, opts)
+}
+
+func RenderLogTextForCLI(nodes []LogNode, opts LogOptions) string {
+	return RenderLogText(nodes, opts)
+}

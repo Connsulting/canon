@@ -230,6 +230,14 @@ func cmdLog(args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
 	limit := fs.Int("n", 50, "max entries")
+	graph := fs.Bool("graph", false, "render dependency graph")
+	oneline := fs.Bool("oneline", false, "compact one line output")
+	all := fs.Bool("all", false, "include all disconnected heads")
+	grep := fs.String("grep", "", "case-insensitive title substring filter")
+	domain := fs.String("domain", "", "exact domain filter")
+	typeName := fs.String("type", "", "exact type filter")
+	color := fs.String("color", "auto", "colorize output: auto, always, never")
+	date := fs.String("date", "absolute", "timestamp format: absolute or relative")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -237,36 +245,72 @@ func cmdLog(args []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := canon.LoadLedger(abs)
+
+	useLegacy := !*graph &&
+		!*oneline &&
+		!*all &&
+		strings.TrimSpace(*grep) == "" &&
+		strings.TrimSpace(*domain) == "" &&
+		strings.TrimSpace(*typeName) == "" &&
+		strings.EqualFold(strings.TrimSpace(*color), "auto") &&
+		strings.EqualFold(strings.TrimSpace(*date), "absolute")
+
+	if useLegacy {
+		entries, err := canon.LoadLedger(abs)
+		if err != nil {
+			return err
+		}
+		if *limit < 0 {
+			entries = nil
+		} else if *limit < len(entries) {
+			entries = entries[:*limit]
+		}
+		for _, entry := range entries {
+			fmt.Printf("Spec: %s\n", entry.SpecID)
+			if strings.TrimSpace(entry.Title) != "" {
+				fmt.Printf("Title: %s\n", entry.Title)
+			}
+			if strings.TrimSpace(entry.Type) != "" {
+				fmt.Printf("Type: %s\n", entry.Type)
+			}
+			if strings.TrimSpace(entry.Domain) != "" {
+				fmt.Printf("Domain: %s\n", entry.Domain)
+			}
+			fmt.Printf("Date: %s\n", entry.IngestedAt)
+			if len(entry.Parents) == 0 {
+				fmt.Println("Parents: []")
+			} else {
+				fmt.Printf("Parents: [%s]\n", strings.Join(entry.Parents, ", "))
+			}
+			fmt.Printf("Hash: %s\n", entry.ContentHash)
+			if strings.TrimSpace(entry.SourcePath) != "" {
+				fmt.Printf("Source: %s\n", entry.SourcePath)
+			}
+			fmt.Printf("SpecPath: %s\n", entry.SpecPath)
+			fmt.Println()
+		}
+		return nil
+	}
+
+	opts := canon.LogOptions{
+		Limit:   *limit,
+		Graph:   *graph,
+		OneLine: *oneline,
+		All:     *all,
+		Grep:    *grep,
+		Domain:  *domain,
+		Type:    *typeName,
+		Color:   *color,
+		IsTTY:   isTTY(os.Stdout),
+		Date:    *date,
+	}
+	nodes, err := canon.BuildLogViewForCLI(abs, opts)
 	if err != nil {
 		return err
 	}
-	if *limit < len(entries) {
-		entries = entries[:*limit]
-	}
-	for _, entry := range entries {
-		fmt.Printf("Spec: %s\n", entry.SpecID)
-		if strings.TrimSpace(entry.Title) != "" {
-			fmt.Printf("Title: %s\n", entry.Title)
-		}
-		if strings.TrimSpace(entry.Type) != "" {
-			fmt.Printf("Type: %s\n", entry.Type)
-		}
-		if strings.TrimSpace(entry.Domain) != "" {
-			fmt.Printf("Domain: %s\n", entry.Domain)
-		}
-		fmt.Printf("Date: %s\n", entry.IngestedAt)
-		if len(entry.Parents) == 0 {
-			fmt.Println("Parents: []")
-		} else {
-			fmt.Printf("Parents: [%s]\n", strings.Join(entry.Parents, ", "))
-		}
-		fmt.Printf("Hash: %s\n", entry.ContentHash)
-		if strings.TrimSpace(entry.SourcePath) != "" {
-			fmt.Printf("Source: %s\n", entry.SourcePath)
-		}
-		fmt.Printf("SpecPath: %s\n", entry.SpecPath)
-		fmt.Println()
+	text := canon.RenderLogTextForCLI(nodes, opts)
+	if text != "" {
+		fmt.Print(text)
 	}
 	return nil
 }
@@ -426,7 +470,7 @@ func printUsage() {
 	fmt.Println("  ingest  ingest a source file with AI metadata and conflict checks")
 	fmt.Println("  import  alias for ingest")
 	fmt.Println("  raw     synthesize a spec from freeform text or voice note content")
-	fmt.Println("  log     show spec ledger newest first")
+	fmt.Println("  log     show spec ledger; supports --graph and Git-style filters")
 	fmt.Println("  show    show a canonical spec by id")
 	fmt.Println("  index   build deterministic index")
 	fmt.Println("  render  render expected state from canonical specs")
@@ -446,6 +490,17 @@ func parseCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func isTTY(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
 func collectRawInputInteractive(reader io.Reader, writer io.Writer) (string, error) {

@@ -1,0 +1,14 @@
+{
+  "spec_id": "e2cc388",
+  "title": "Canon Log Dependency Graph and Git-Style Filters",
+  "type": "feature",
+  "domain": "canon-cli",
+  "parents": [
+    "b98ed16"
+  ],
+  "sequence": 1771588581070028696,
+  "ingested_at": "2026-02-20T11:56:21Z",
+  "content_hash": "2f2ea9014c379ac39c4516e23b6512a82ad45478ed5dc1fb2c061d00adf76a21",
+  "spec_path": ".canon/specs/e2cc388.spec.md",
+  "source_path": ".canon/sources/e2cc388.source.md"
+}

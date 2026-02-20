@@ -1,0 +1,14 @@
+{
+  "spec_id": "b98ed16",
+  "title": "AI Render Effective State Compression",
+  "type": "technical",
+  "domain": "state-render",
+  "parents": [
+    "e1bcd34"
+  ],
+  "sequence": 1771525662830029354,
+  "ingested_at": "2026-02-19T18:27:42Z",
+  "content_hash": "5d1c2a5659f798dc71261c69b423b36648ebc2241544aab2b0390725f958492f",
+  "spec_path": ".canon/specs/b98ed16.spec.md",
+  "source_path": ".canon/sources/b98ed16.source.md"
+}

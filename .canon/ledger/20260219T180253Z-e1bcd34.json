@@ -1,0 +1,12 @@
+{
+  "spec_id": "e1bcd34",
+  "title": "Canon MVP Phase 1: Spec Ingest and Deterministic State Render",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [],
+  "sequence": 1771524173108544859,
+  "ingested_at": "2026-02-19T18:02:53Z",
+  "content_hash": "585e92ea56fa4198e4d5312d94136a6cfff3ae5f94e0895af3023d1ac6c985ec",
+  "spec_path": ".canon/specs/e1bcd34.spec.md",
+  "source_path": ".canon/sources/e1bcd34.source.md"
+}
