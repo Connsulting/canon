@@ -16,6 +16,7 @@ Phase 1 only:
 - `go run ./cmd/canon raw`
 - `go run ./cmd/canon log`
 - `go run ./cmd/canon show <spec-id>`
+- `go run ./cmd/canon reset <spec-id>`
 - `go run ./cmd/canon render --write`
 - `go run ./cmd/canon status`
 

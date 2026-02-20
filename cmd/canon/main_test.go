@@ -155,3 +155,57 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	return string(out)
 }
+
+func TestResetCommandResetsToReferenceSpec(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text: `---
+id: spec-501
+type: feature
+title: "Initial Policy"
+domain: api
+created: 2026-02-19T12:00:00Z
+depends_on: []
+touched_domains: [api]
+---
+Initial API policy.`,
+	}); err != nil {
+		t.Fatalf("first ingest failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text: `---
+id: spec-502
+type: feature
+title: "Follow Up"
+domain: api
+created: 2026-02-19T12:10:00Z
+depends_on: [spec-501]
+touched_domains: [api]
+---
+Follow-up API policy.`,
+	}); err != nil {
+		t.Fatalf("second ingest failed: %v", err)
+	}
+
+	if err := run([]string{"reset", "--root", root, "spec-501"}); err != nil {
+		t.Fatalf("reset command failed: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "spec-502.spec.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected spec-502 to be removed, err=%v", err)
+	}
+	entries, err := canon.LoadLedger(root)
+	if err != nil {
+		t.Fatalf("LoadLedger failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 ledger entry after reset, got %d", len(entries))
+	}
+	if entries[0].SpecID != "spec-501" {
+		t.Fatalf("expected remaining ledger entry spec-501, got %s", entries[0].SpecID)
+	}
+}

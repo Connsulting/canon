@@ -1,0 +1,14 @@
+{
+  "spec_id": "c9f6a10",
+  "title": "Canon Reset",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "e2cc388"
+  ],
+  "sequence": 1771590034918074007,
+  "ingested_at": "2026-02-20T12:20:34Z",
+  "content_hash": "3e617098791904f93f5bafd8e8f105ba1c79bc9b7fa7ce9811fd301876642e47",
+  "spec_path": ".canon/specs/c9f6a10.spec.md",
+  "source_path": ".canon/sources/c9f6a10.source.md"
+}
