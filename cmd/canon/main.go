@@ -298,6 +298,9 @@ func cmdRender(args []string) error {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
 	write := fs.Bool("write", false, "write generated artifacts")
+	aiMode := fs.String("ai", "auto", "AI render mode: off, auto, from-response")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "JSON response file from headless AI render run")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -305,7 +308,30 @@ func cmdRender(args []string) error {
 	if err != nil {
 		return err
 	}
-	result, err := canon.Render(abs, canon.RenderOptions{Write: *write})
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
+		return err
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(*aiMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
+		mode = "from-response"
+	}
+
+	aiProvider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		aiProvider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+
+	result, err := canon.Render(abs, canon.RenderOptions{
+		Write:        *write,
+		AIMode:       mode,
+		AIProvider:   aiProvider,
+		ResponseFile: strings.TrimSpace(*responseFile),
+	})
 	if err != nil {
 		return err
 	}
@@ -316,6 +342,14 @@ func cmdRender(args []string) error {
 			result.FilesUpdated,
 			result.FilesRemoved,
 		)
+		if result.AIUsed {
+			fmt.Println("ai render: applied")
+		} else if result.AIFallback {
+			fmt.Println("ai render: fallback to deterministic output")
+			if strings.TrimSpace(result.AIFallbackReason) != "" {
+				fmt.Printf("ai render fallback reason: %s\n", result.AIFallbackReason)
+			}
+		}
 	} else {
 		fmt.Println("dry run complete; use --write to persist state")
 	}

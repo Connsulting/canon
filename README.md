@@ -5,9 +5,9 @@ Canon is a Go CLI for turning specs into a canonical expected application state.
 ## Current Scope
 Phase 1 only:
 1. Ingest specs into `.canon/` as source of truth.
-2. Render deterministic expected state into `state/`.
+2. Render effective expected state into `state/`.
 
-`render` is deterministic and does not call AI.
+`render` defaults to AI-assisted synthesis (`--ai auto`) and falls back to deterministic output if AI fails.
 
 ## Commands
 - `go run ./cmd/canon init`
@@ -18,6 +18,11 @@ Phase 1 only:
 - `go run ./cmd/canon show <spec-id>`
 - `go run ./cmd/canon render --write`
 - `go run ./cmd/canon status`
+
+Render options:
+- `--ai off|auto|from-response` (default: `auto`)
+- `--ai-provider codex|claude` (default from config)
+- `--response-file <path>` (required for `from-response`; implied when provided with `auto`)
 
 ## Interactive Raw Flow
 Run:
@@ -56,6 +61,12 @@ provider = codex
 ```
 
 Supported providers: `codex`, `claude`.
+
+## AI Render Runtime
+- Default render timeout: `10m`.
+- Override timeout with `CANON_AI_RENDER_TIMEOUT_SECONDS=<seconds>`.
+- Disable timeout entirely with `CANON_AI_RENDER_TIMEOUT_SECONDS=0`.
+- When fallback is used, CLI prints `ai render fallback reason: ...`.
 
 ## Canon Layout
 `canon init` creates:

@@ -5,18 +5,27 @@ specs:
     domain: canon-cli
     touches: [canon-cli, config, ingest, ledger, state-render]
     depends_on: []
+    depended_on_by: [canon-render-effective-state-v1]
+  canon-render-effective-state-v1:
+    title: "AI Render Effective State Compression"
+    type: technical
+    domain: state-render
+    touches: [canon-cli, ingest, state-render]
+    depends_on: [canon-mvp-phase1]
     depended_on_by: []
 domains:
   canon-cli:
-    specs: [canon-mvp-phase1]
+    specs: [canon-mvp-phase1, canon-render-effective-state-v1]
   config:
     specs: [canon-mvp-phase1]
   ingest:
-    specs: [canon-mvp-phase1]
+    specs: [canon-mvp-phase1, canon-render-effective-state-v1]
   ledger:
     specs: [canon-mvp-phase1]
   state-render:
-    specs: [canon-mvp-phase1]
+    specs: [canon-mvp-phase1, canon-render-effective-state-v1]
 cross_domain_edges:
   - spec: canon-mvp-phase1
     domains: [canon-cli, config, ingest, ledger, state-render]
+  - spec: canon-render-effective-state-v1
+    domains: [canon-cli, ingest, state-render]

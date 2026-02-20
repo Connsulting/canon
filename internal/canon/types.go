@@ -50,14 +50,20 @@ type IngestResult struct {
 }
 
 type RenderOptions struct {
-	Write bool
+	Write        bool
+	AIMode       string
+	AIProvider   string
+	ResponseFile string
 }
 
 type RenderResult struct {
-	FilesRemoved    int
-	FilesUpdated    int
-	FilesWritten    int
-	DomainChecksums map[string]string
+	FilesRemoved     int
+	FilesUpdated     int
+	FilesWritten     int
+	DomainChecksums  map[string]string
+	AIUsed           bool
+	AIFallback       bool
+	AIFallbackReason string
 }
 
 type Index struct {

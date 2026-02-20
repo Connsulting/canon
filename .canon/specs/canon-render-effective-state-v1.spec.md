@@ -1,0 +1,44 @@
+---
+id: canon-render-effective-state-v1
+type: technical
+title: "AI Render Effective State Compression"
+domain: state-render
+created: 2026-02-19T18:27:42Z
+depends_on: [canon-mvp-phase1]
+touched_domains: [canon-cli, ingest, state-render]
+---
+# AI Render Effective State
+
+## Problem
+As specs accumulate over time, many requirements overlap or are superseded by later decisions.
+The rendered state must represent current effective product intent, not a raw union of all historical prose.
+
+## Requirements
+- Render must support AI-assisted synthesis so cross-cutting and overlapping specs can be compressed.
+- Render must regenerate from `.canon/` even if `state/` is missing.
+- Render output does not need exact byte-for-byte determinism, but structure and coverage must remain stable.
+- Defaults must be sane so running `canon render` works without heavy flag usage.
+- Conflict resolution remains in ingest; render assumes canonical specs are already conflict-resolved.
+
+## Compression Semantics
+- Many historical specs may map to the same concept.
+- Later intent and explicit resolution specs should override earlier overlapping content.
+- Rendered state should be substantially smaller than the sum of all source specs when overlap is high.
+- Superseded details should be retained in provenance, not emitted as active state prose.
+
+## Validation
+- Add end-to-end tests that ingest overlapping specs and confirm render produces compressed effective state.
+- Add tests for rebuilding from scratch when `state/` is absent.
+- Add tests for AI render integration paths.
+
+## AI Enhancements
+
+Render must synthesize effective state from canonical specs by compressing overlap and honoring later intent as authoritative context.
+## Rules
+- Ingest remains the conflict gate.
+- Render computes effective state, not union-of-spec prose.
+- Render must rebuild from `.canon/` even when `state/` is missing.
+- Output structure should be stable while wording can vary.
+## Outcomes
+- State output can be smaller than source corpus.
+- Superseded details are tracked as provenance.

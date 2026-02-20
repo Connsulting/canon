@@ -1,0 +1,14 @@
+{
+  "spec_id": "canon-render-effective-state-v1",
+  "title": "AI Render Effective State Compression",
+  "type": "technical",
+  "domain": "state-render",
+  "parents": [
+    "canon-mvp-phase1"
+  ],
+  "sequence": 1771525662830029354,
+  "ingested_at": "2026-02-19T18:27:42Z",
+  "content_hash": "82623ea0bd2173aa1269a2facd9425e3b95a991f2d1da4e61ce3aac6dfca6cf2",
+  "spec_path": ".canon/specs/canon-render-effective-state-v1.spec.md",
+  "source_path": ".canon/sources/canon-render-effective-state-v1.source.md"
+}
