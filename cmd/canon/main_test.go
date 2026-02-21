@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -207,5 +209,325 @@ Follow-up API policy.`,
 	}
 	if entries[0].SpecID != "spec-501" {
 		t.Fatalf("expected remaining ledger entry spec-501, got %s", entries[0].SpecID)
+	}
+}
+
+func TestBlameCommandDirectMatchWithResponseFile(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	ingestSpecForBlame(t, root, "a1b2c3d", "API Endpoint Design and Versioning", "api", "2026-01-15T10:30:00Z", []string{"api"},
+		"All list endpoints must return paginated responses.\nDefault page size must be 25 items.\nClients may override page size up to a maximum of 100.",
+	)
+
+	responsePath := filepath.Join(root, "blame-response.json")
+	response := `{
+  "model": "codex-headless",
+  "found": true,
+  "results": [
+    {
+      "spec_id": "a1b2c3d",
+      "confidence": "high",
+      "relevant_lines": [
+        "All list endpoints must return paginated responses.",
+        "Default page size must be 25 items.",
+        "Clients may override page size up to a maximum of 100."
+      ]
+    }
+  ]
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"blame",
+			"--root", root,
+			"--response-file", responsePath,
+			"API responses are paginated with a default page size of 25",
+		}); err != nil {
+			t.Fatalf("blame command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "blame: 1 spec found") {
+		t.Fatalf("expected single result summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "spec: a1b2c3d") {
+		t.Fatalf("expected matching spec id in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "confidence: high") {
+		t.Fatalf("expected confidence in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "> Default page size must be 25 items.") {
+		t.Fatalf("expected relevant lines in output, got:\n%s", out)
+	}
+}
+
+func TestBlameCommandMultipleResults(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	ingestSpecForBlame(t, root, "f4e5d6c", "User Registration Flow", "auth", "2026-01-10T09:00:00Z", []string{"auth"},
+		"New users must verify their email address before account activation.\nUnverified accounts must be restricted to read-only access.",
+	)
+	ingestSpecForBlame(t, root, "7890abc", "Billing and Subscription Gating", "billing", "2026-02-01T14:00:00Z", []string{"billing", "auth"},
+		"Paid features must only be accessible to users with active subscriptions.\nSubscription activation requires a fully verified account.",
+	)
+
+	responsePath := filepath.Join(root, "blame-response.json")
+	response := `{
+  "model": "claude-headless",
+  "found": true,
+  "results": [
+    {
+      "spec_id": "f4e5d6c",
+      "confidence": "high",
+      "relevant_lines": [
+        "New users must verify their email address before account activation.",
+        "Unverified accounts must be restricted to read-only access."
+      ]
+    },
+    {
+      "spec_id": "7890abc",
+      "confidence": "medium",
+      "relevant_lines": [
+        "Paid features must only be accessible to users with active subscriptions.",
+        "Subscription activation requires a fully verified account."
+      ]
+    }
+  ]
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"blame",
+			"--root", root,
+			"--response-file", responsePath,
+			"users must verify their email before accessing paid features",
+		}); err != nil {
+			t.Fatalf("blame command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "blame: 2 specs found") {
+		t.Fatalf("expected two results summary, got:\n%s", out)
+	}
+	first := strings.Index(out, "spec: f4e5d6c")
+	second := strings.Index(out, "spec: 7890abc")
+	if first == -1 || second == -1 || first > second {
+		t.Fatalf("expected result ordering from AI response, got:\n%s", out)
+	}
+}
+
+func TestBlameCommandNoMatchReportsSpecGap(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	ingestSpecForBlame(t, root, "spec-401", "Session Policy", "auth", "2026-02-10T12:00:00Z", []string{"auth"},
+		"Sessions must expire after 15 minutes of inactivity.",
+	)
+
+	responsePath := filepath.Join(root, "blame-response.json")
+	response := `{
+  "model": "codex-headless",
+  "found": false,
+  "results": []
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"blame",
+			"--root", root,
+			"--response-file", responsePath,
+			"error messages are displayed in the user's preferred language",
+		}); err != nil {
+			t.Fatalf("blame command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "blame: no matching specs found") {
+		t.Fatalf("expected no match summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "specification gap") {
+		t.Fatalf("expected gap explanation, got:\n%s", out)
+	}
+	if !strings.Contains(out, `canon raw --text "error messages are displayed in the user's preferred language"`) {
+		t.Fatalf("expected spec authoring suggestion, got:\n%s", out)
+	}
+}
+
+func TestBlameCommandDomainFilterRestrictsResults(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	ingestSpecForBlame(t, root, "spec-auth", "Registration Rules", "auth", "2026-02-10T12:00:00Z", []string{"auth"},
+		"Users must verify email before account activation.",
+	)
+	ingestSpecForBlame(t, root, "spec-billing", "Billing Rules", "billing", "2026-02-10T12:05:00Z", []string{"billing"},
+		"Paid features must require an active subscription.",
+	)
+
+	responsePath := filepath.Join(root, "blame-response.json")
+	response := `{
+  "model": "codex-headless",
+  "found": true,
+  "results": [
+    {
+      "spec_id": "spec-auth",
+      "confidence": "high",
+      "relevant_lines": ["Users must verify email before account activation."]
+    },
+    {
+      "spec_id": "spec-billing",
+      "confidence": "medium",
+      "relevant_lines": ["Paid features must require an active subscription."]
+    }
+  ]
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"blame",
+			"--root", root,
+			"--domain", "auth",
+			"--response-file", responsePath,
+			"users must verify email before paid access",
+		}); err != nil {
+			t.Fatalf("blame command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "blame: 1 spec found") {
+		t.Fatalf("expected one filtered result, got:\n%s", out)
+	}
+	if !strings.Contains(out, "spec: spec-auth") {
+		t.Fatalf("expected auth spec in output, got:\n%s", out)
+	}
+	if strings.Contains(out, "spec: spec-billing") {
+		t.Fatalf("did not expect billing spec with auth filter, got:\n%s", out)
+	}
+}
+
+func TestBlameCommandJSONOutput(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	ingestSpecForBlame(t, root, "a1b2c3d", "API Endpoint Design and Versioning", "api", "2026-01-15T10:30:00Z", []string{"api"},
+		"All list endpoints must return paginated responses.\nDefault page size must be 25 items.",
+	)
+
+	responsePath := filepath.Join(root, "blame-response.json")
+	response := `{
+  "model": "codex-headless",
+  "found": true,
+  "results": [
+    {
+      "spec_id": "a1b2c3d",
+      "confidence": "high",
+      "relevant_lines": [
+        "All list endpoints must return paginated responses.",
+        "Default page size must be 25 items."
+      ]
+    }
+  ]
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"blame",
+			"--root", root,
+			"--json",
+			"--response-file", responsePath,
+			"API responses are paginated with a default page size of 25",
+		}); err != nil {
+			t.Fatalf("blame command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Query   string `json:"query"`
+		Found   bool   `json:"found"`
+		Results []struct {
+			SpecID       string   `json:"spec_id"`
+			Title        string   `json:"title"`
+			Domain       string   `json:"domain"`
+			Confidence   string   `json:"confidence"`
+			Created      string   `json:"created"`
+			RelevantLine []string `json:"relevant_lines"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.Query == "" || !payload.Found {
+		t.Fatalf("expected found JSON payload, got: %+v", payload)
+	}
+	if len(payload.Results) != 1 || payload.Results[0].SpecID != "a1b2c3d" {
+		t.Fatalf("unexpected JSON results: %+v", payload.Results)
+	}
+}
+
+func TestBlameCommandFailsWhenAIProviderUnavailable(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	ingestSpecForBlame(t, root, "spec-500", "API Rules", "api", "2026-02-10T12:00:00Z", []string{"api"},
+		"API requests must include a tenant header.",
+	)
+
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	err := run([]string{
+		"blame",
+		"--root", root,
+		"API requests include tenant header",
+	})
+	if err == nil {
+		t.Fatalf("expected blame to fail when AI provider is unavailable")
+	}
+	if !strings.Contains(err.Error(), "runtime-ready") {
+		t.Fatalf("expected runtime readiness error, got: %v", err)
+	}
+}
+
+func ingestSpecForBlame(t *testing.T, root string, id string, title string, domain string, created string, touched []string, body string) {
+	t.Helper()
+	text := fmt.Sprintf(`---
+id: %s
+type: feature
+title: %q
+domain: %s
+created: %s
+depends_on: []
+touched_domains: [%s]
+---
+%s`, id, title, domain, created, strings.Join(touched, ", "), body)
+	if _, err := canon.Ingest(root, canon.IngestInput{Text: text}); err != nil {
+		t.Fatalf("Ingest failed for %s: %v", id, err)
 	}
 }

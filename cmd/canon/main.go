@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -47,6 +48,8 @@ func run(args []string) error {
 		return cmdStatus(args[1:])
 	case "index":
 		return cmdIndex(args[1:])
+	case "blame":
+		return cmdBlame(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -492,6 +495,99 @@ func cmdIndex(args []string) error {
 	return nil
 }
 
+func cmdBlame(args []string) error {
+	fs := flag.NewFlagSet("blame", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	domain := fs.String("domain", "", "restrict search to this domain")
+	jsonOutput := fs.Bool("json", false, "output machine-readable JSON")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "JSON response file from headless AI blame run")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	query := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	if query == "" {
+		return errors.New("blame requires a behavior description")
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
+		return err
+	}
+
+	aiProvider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		aiProvider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+
+	result, err := canon.BlameForCLI(abs, canon.BlameInput{
+		Query:        query,
+		Domain:       strings.TrimSpace(*domain),
+		AIProvider:   aiProvider,
+		ResponseFile: strings.TrimSpace(*responseFile),
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOutput {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	}
+
+	printBlameResult(result, strings.TrimSpace(*domain))
+	return nil
+}
+
+func printBlameResult(result canon.BlameResult, domain string) {
+	if !result.Found || len(result.Results) == 0 {
+		fmt.Println("blame: no matching specs found")
+		fmt.Println()
+		fmt.Println("  The described behavior is not covered by any canonical spec.")
+		fmt.Println("  This may be an implementation decision not yet captured in specs,")
+		fmt.Println("  or a specification gap.")
+		fmt.Println()
+		fmt.Println("  Consider authoring a spec with:")
+		suggestedDomain := strings.TrimSpace(domain)
+		if suggestedDomain == "" {
+			suggestedDomain = "general"
+		}
+		fmt.Printf("    canon raw --text %q --domain %s\n", result.Query, suggestedDomain)
+		return
+	}
+
+	if len(result.Results) == 1 {
+		fmt.Println("blame: 1 spec found")
+	} else {
+		fmt.Printf("blame: %d specs found\n", len(result.Results))
+	}
+	fmt.Println()
+	for i, item := range result.Results {
+		fmt.Printf("  spec: %s\n", item.SpecID)
+		fmt.Printf("  title: %q\n", item.Title)
+		fmt.Printf("  domain: %s\n", item.Domain)
+		fmt.Printf("  confidence: %s\n", item.Confidence)
+		fmt.Printf("  created: %s\n", item.Created)
+		fmt.Println()
+		fmt.Println("  relevant lines:")
+		if len(item.RelevantLines) == 0 {
+			fmt.Println("  > (no excerpt provided)")
+		} else {
+			for _, line := range item.RelevantLines {
+				fmt.Printf("  > %s\n", line)
+			}
+		}
+		if i != len(result.Results)-1 {
+			fmt.Println()
+		}
+	}
+}
+
 func printUsage() {
 	fmt.Println("usage: canon <command> [options]")
 	fmt.Println()
@@ -505,6 +601,7 @@ func printUsage() {
 	fmt.Println("  reset   reset canon history to a specific spec id")
 	fmt.Println("  index   build deterministic index")
 	fmt.Println("  render  render expected state from canonical specs")
+	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  status  show repository summary")
 }
 
