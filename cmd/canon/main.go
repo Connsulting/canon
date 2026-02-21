@@ -48,6 +48,8 @@ func run(args []string) error {
 		return cmdStatus(args[1:])
 	case "index":
 		return cmdIndex(args[1:])
+	case "check":
+		return cmdCheck(args[1:])
 	case "blame":
 		return cmdBlame(args[1:])
 	case "help", "-h", "--help":
@@ -588,6 +590,73 @@ func printBlameResult(result canon.BlameResult, domain string) {
 	}
 }
 
+func cmdCheck(args []string) error {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	domain := fs.String("domain", "", "restrict check scope to one domain")
+	specID := fs.String("spec", "", "check one spec id against others in scope")
+	aiMode := fs.String("ai", "auto", "AI check mode: auto, from-response")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "JSON response file from headless AI check run")
+	jsonOut := fs.Bool("json", false, "output JSON")
+	write := fs.Bool("write", false, "write conflict reports")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("check does not accept positional arguments")
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
+		return err
+	}
+	provider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		provider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+	mode := strings.ToLower(strings.TrimSpace(*aiMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
+		mode = "from-response"
+	}
+
+	result, err := canon.CheckForCLI(abs, canon.CheckOptions{
+		Domain:       strings.TrimSpace(*domain),
+		SpecID:       strings.TrimSpace(*specID),
+		Write:        *write,
+		AIMode:       mode,
+		AIProvider:   provider,
+		ResponseFile: strings.TrimSpace(*responseFile),
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		text := renderCheckText(result)
+		if text != "" {
+			fmt.Print(text)
+		}
+	}
+
+	if !result.Passed {
+		return fmt.Errorf("check failed: %d conflicts across %d specs", result.TotalConflicts, result.TotalSpecs)
+	}
+	return nil
+}
 func printUsage() {
 	fmt.Println("usage: canon <command> [options]")
 	fmt.Println()
@@ -597,6 +666,7 @@ func printUsage() {
 	fmt.Println("  import  alias for ingest")
 	fmt.Println("  raw     synthesize a spec from freeform text or voice note content")
 	fmt.Println("  log     show spec ledger; supports --graph and Git-style filters")
+	fmt.Println("  check   scan canonical specs for semantic conflicts")
 	fmt.Println("  show    show a canonical spec by id")
 	fmt.Println("  reset   reset canon history to a specific spec id")
 	fmt.Println("  index   build deterministic index")
@@ -650,4 +720,60 @@ func collectRawInputInteractive(reader io.Reader, writer io.Writer) (string, err
 		return "", errors.New("raw requires non-empty text input")
 	}
 	return text, nil
+}
+
+func renderCheckText(result canon.CheckResult) string {
+	lines := make([]string, 0)
+	if result.TotalConflicts == 0 {
+		lines = append(lines, fmt.Sprintf("check passed: 0 conflicts across %d specs", result.TotalSpecs))
+		return strings.Join(lines, "\n") + "\n"
+	}
+
+	type pairLine struct {
+		specA   string
+		titleA  string
+		specB   string
+		titleB  string
+		domains []string
+	}
+	pairs := map[string]pairLine{}
+	grouped := map[string][]canon.CheckConflict{}
+	order := make([]string, 0)
+	for _, conflict := range result.Conflicts {
+		key := conflict.SpecA + "|" + conflict.SpecB
+		if _, ok := grouped[key]; !ok {
+			order = append(order, key)
+			pairs[key] = pairLine{
+				specA:   conflict.SpecA,
+				titleA:  conflict.TitleA,
+				specB:   conflict.SpecB,
+				titleB:  conflict.TitleB,
+				domains: conflict.OverlapDomains,
+			}
+		}
+		grouped[key] = append(grouped[key], conflict)
+	}
+
+	for _, key := range order {
+		pair := pairs[key]
+		lines = append(lines, fmt.Sprintf("conflict: %s <-> %s", pair.specA, pair.specB))
+		lines = append(lines, fmt.Sprintf("  specs: %q <-> %q", pair.titleA, pair.titleB))
+		if len(pair.domains) == 0 {
+			lines = append(lines, "  domains: []")
+		} else {
+			lines = append(lines, fmt.Sprintf("  domains: [%s]", strings.Join(pair.domains, ", ")))
+		}
+		for _, conflict := range grouped[key] {
+			lines = append(lines, fmt.Sprintf("  key: %s", conflict.StatementKey))
+			lines = append(lines, fmt.Sprintf("  %s: %q", conflict.SpecA, conflict.LineA))
+			lines = append(lines, fmt.Sprintf("  %s: %q", conflict.SpecB, conflict.LineB))
+			lines = append(lines, "")
+		}
+	}
+
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	lines = append(lines, fmt.Sprintf("check failed: %d conflicts across %d specs", result.TotalConflicts, result.TotalSpecs))
+	return strings.Join(lines, "\n") + "\n"
 }

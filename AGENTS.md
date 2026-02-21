@@ -36,3 +36,8 @@ Use this workflow for all new feature work in this repository.
 - After final approval, ingest the spec into Canon artifacts (under `.canon/`) and update project state as needed.
 - Do not commit the draft spec document itself (for example files in `specs/` used only for drafting).
 - Commit the ingested Canon artifacts (the doc Canon output in `.canon/`) and related code/test changes.
+
+## AI First Semantic Checks
+- Treat semantic contradiction detection as an AI first capability.
+- Prefer AI adjudication for `ingest`, `check`, and related semantic validation commands.
+- Rule based semantic checks may exist only as legacy compatibility helpers, not as the primary decision path.

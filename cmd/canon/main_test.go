@@ -531,3 +531,158 @@ touched_domains: [%s]
 		t.Fatalf("Ingest failed for %s: %v", id, err)
 	}
 }
+
+func TestCheckCommandPassesWithoutConflicts(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCLICheckSpec(t, root, "safe-a", "API Auth", "api", "API endpoints must require authentication.")
+	writeCLICheckSpec(t, root, "safe-b", "Billing Retry", "billing", "Billing retries must happen daily.")
+	responsePath := writeCLICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []map[string]any{},
+		},
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"check", "--root", root, "--response-file", responsePath}); err != nil {
+			t.Fatalf("check command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "check passed: 0 conflicts across 2 specs") {
+		t.Fatalf("unexpected check output:\n%s", out)
+	}
+}
+
+func TestCheckCommandJSONAndExitCodeOnConflicts(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCLICheckSpec(t, root, "conf-a", "Auth Required", "api", "API endpoints must require authentication.")
+	writeCLICheckSpec(t, root, "conf-b", "Auth Optional", "api", "API endpoints must not require authentication.")
+	responsePath := writeCLICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": true,
+			"summary":       "Found conflict.",
+			"conflicts": []map[string]any{
+				{
+					"spec_a":        "conf-a",
+					"spec_b":        "conf-b",
+					"domain":        "api",
+					"statement_key": "api auth required",
+					"line_a":        "API endpoints must require authentication.",
+					"line_b":        "API endpoints must not require authentication.",
+					"reason":        "Direct contradiction.",
+				},
+			},
+		},
+	})
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"check", "--root", root, "--json", "--response-file", responsePath})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected non zero behavior when conflicts are detected")
+	}
+
+	var payload struct {
+		Passed         bool `json:"passed"`
+		TotalSpecs     int  `json:"total_specs"`
+		TotalConflicts int  `json:"total_conflicts"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\n%s", err, out)
+	}
+	if payload.Passed {
+		t.Fatalf("expected failed check payload")
+	}
+	if payload.TotalSpecs != 2 || payload.TotalConflicts != 1 {
+		t.Fatalf("unexpected check payload: %+v", payload)
+	}
+}
+
+func TestCheckCommandWriteCreatesConflictReport(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCLICheckSpec(t, root, "write-a", "Audit Required", "auth", "Audit logs must retain user access history.")
+	writeCLICheckSpec(t, root, "write-b", "Audit Forbidden", "auth", "Audit logs must not retain user access history.")
+	responsePath := writeCLICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": true,
+			"summary":       "Found conflict.",
+			"conflicts": []map[string]any{
+				{
+					"spec_a":        "write-a",
+					"spec_b":        "write-b",
+					"domain":        "auth",
+					"statement_key": "audit retention",
+					"line_a":        "Audit logs must retain user access history.",
+					"line_b":        "Audit logs must not retain user access history.",
+					"reason":        "Direct contradiction.",
+				},
+			},
+		},
+	})
+
+	var commandErr error
+	_ = captureStdout(t, func() {
+		commandErr = run([]string{"check", "--root", root, "--write", "--response-file", responsePath})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected conflict check command to return error")
+	}
+
+	reports, err := filepath.Glob(filepath.Join(root, ".canon", "conflict-reports", "*.yaml"))
+	if err != nil {
+		t.Fatalf("failed to list conflict reports: %v", err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("expected one written conflict report, got %d", len(reports))
+	}
+}
+
+func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
+	t.Helper()
+	text := `---
+id: ` + id + `
+type: feature
+title: "` + title + `"
+domain: ` + domain + `
+created: 2026-02-21T00:00:00Z
+depends_on: []
+touched_domains: [` + domain + `]
+---
+` + body + `
+`
+	path := filepath.Join(root, ".canon", "specs", id+".spec.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatalf("failed writing check spec %s: %v", id, err)
+	}
+}
+
+func writeCLICheckResponse(t *testing.T, root string, payload map[string]any) string {
+	t.Helper()
+	b, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatalf("failed marshaling check response: %v", err)
+	}
+	path := filepath.Join(root, "ai-check-response.json")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatalf("failed writing check response: %v", err)
+	}
+	return path
+}

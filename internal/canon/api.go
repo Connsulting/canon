@@ -24,3 +24,7 @@ func RenderLogTextForCLI(nodes []LogNode, opts LogOptions) string {
 func BlameForCLI(root string, input BlameInput) (BlameResult, error) {
 	return Blame(root, input)
 }
+
+func CheckForCLI(root string, opts CheckOptions) (CheckResult, error) {
+	return Check(root, opts)
+}
