@@ -6,3 +6,4 @@ coverage.out
 state/
 specs/
 !specs/.gitkeep
+!.canon/specs/
