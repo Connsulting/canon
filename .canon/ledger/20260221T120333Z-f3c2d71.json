@@ -1,0 +1,14 @@
+{
+  "spec_id": "f3c2d71",
+  "title": "Add canon check for post merge semantic contradiction scans",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "c9f6a10"
+  ],
+  "sequence": 1771675413615699738,
+  "ingested_at": "2026-02-21T12:03:33Z",
+  "content_hash": "d0ba8ddc22c9d42aad386c84b6ad85020eb673724bfec7054882ca785cbd54de",
+  "spec_path": ".canon/specs/f3c2d71.spec.md",
+  "source_path": ".canon/sources/f3c2d71.source.md"
+}
