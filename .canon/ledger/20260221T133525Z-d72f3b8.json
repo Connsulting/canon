@@ -1,0 +1,14 @@
+{
+  "spec_id": "d72f3b8",
+  "title": "Canon Blame for Behavioral Provenance",
+  "type": "feature",
+  "domain": "canon-cli",
+  "parents": [
+    "c9f6a10"
+  ],
+  "sequence": 1771680925892205081,
+  "ingested_at": "2026-02-21T13:35:25Z",
+  "content_hash": "e54a71630a3b11b2c5373e46449b6eb3d2dc2f54896c0df1f44cf45533308295",
+  "spec_path": ".canon/specs/d72f3b8.spec.md",
+  "source_path": ".canon/sources/d72f3b8.source.md"
+}
