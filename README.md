@@ -18,6 +18,7 @@ Phase 1 only:
 - `go run ./cmd/canon show <spec-id>`
 - `go run ./cmd/canon reset <spec-id>`
 - `go run ./cmd/canon render --write`
+- `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon status`
 
 Spec ID convention:
@@ -40,12 +41,25 @@ Log options:
 - `--date absolute|relative` timestamp display mode (default: `absolute`)
 - `-n <count>` max rows (defaults to 50)
 
+Blame options:
+- `--root <path>` repository root (default: `.`)
+- `--domain <name>` restrict blame to one domain
+- `--json` machine readable output
+- `--ai-provider codex|claude` override configured provider
+- `--response-file <path>` use precomputed AI response JSON
+
+Blame defaults:
+- `canon blame "<text>"` uses current directory as root
+- output defaults to human readable terminal text
+- AI provider defaults from config (`./.canonconfig`, then `~/.canonconfig`, then built in `codex`)
+
 Examples:
 
 ```bash
 go run ./cmd/canon log --graph --oneline --all -n 100
 go run ./cmd/canon log --oneline --domain api --type feature --grep rate
 go run ./cmd/canon log --graph --oneline --all --date relative --color always -n 100
+go run ./cmd/canon blame "graph mode must use semantic dependencies from canonical specs"
 ```
 
 ## Interactive Raw Flow

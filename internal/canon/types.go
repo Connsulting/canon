@@ -77,6 +77,28 @@ type RenderResult struct {
 	AIFallbackReason string
 }
 
+type BlameInput struct {
+	Query        string
+	Domain       string
+	AIProvider   string
+	ResponseFile string
+}
+
+type BlameResult struct {
+	Query   string      `json:"query"`
+	Found   bool        `json:"found"`
+	Results []BlameSpec `json:"results,omitempty"`
+}
+
+type BlameSpec struct {
+	SpecID        string   `json:"spec_id"`
+	Title         string   `json:"title"`
+	Domain        string   `json:"domain"`
+	Confidence    string   `json:"confidence"`
+	Created       string   `json:"created"`
+	RelevantLines []string `json:"relevant_lines"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

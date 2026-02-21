@@ -20,3 +20,7 @@ func BuildLogViewForCLI(root string, opts LogOptions) ([]LogNode, error) {
 func RenderLogTextForCLI(nodes []LogNode, opts LogOptions) string {
 	return RenderLogText(nodes, opts)
 }
+
+func BlameForCLI(root string, input BlameInput) (BlameResult, error) {
+	return Blame(root, input)
+}
