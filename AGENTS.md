@@ -25,6 +25,12 @@ Use this workflow for all new feature work in this repository.
 ## 6) Run end-to-end CLI tests
 - Run end-to-end tests using real command-line flows.
 - Verify behavior with actual CLI commands, not only unit tests.
+- For each implemented behavior, run at least one positive end-to-end command and one negative end-to-end command in this repo.
+- Positive command: demonstrates the behavior you just implemented.
+- Negative command: demonstrates a related behavior that should fail or be rejected.
+- Example: for `git blame`, one run confirms expected output for a supported command and one run confirms expected failure for unsupported behavior.
+- If any of these manual checks fail, fix the implementation and rerun until they pass.
+- Report completion only after unit tests, linting, and both positive and negative manual end-to-end checks pass.
 
 ## 7) Ingest and commit
 - After final approval, ingest the spec into Canon artifacts (under `.canon/`) and update project state as needed.
