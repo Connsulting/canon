@@ -21,6 +21,7 @@ Phase 1 only:
 - `go run ./cmd/canon render --write`
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon status`
+- `go run ./cmd/canon gc`
 
 Spec ID convention:
 - Use 7-char SHA-like hex IDs (for example `a1b2c3d`) for consistency with git-style history views.
@@ -61,6 +62,15 @@ Check options:
 - `--response-file <path>` JSON response file for `from-response` mode
 - `--json` emit machine-readable JSON
 - `--write` persist conflict reports under `.canon/conflict-reports/`
+
+GC options:
+- `--domain <name>` consolidate all specs in one domain
+- `--specs <id1,id2,...>` consolidate specific specs by id
+- `--write` execute consolidation (default is dry run)
+- `--min-specs <n>` minimum specs before consolidation runs (default: `5`)
+- `--force` allow consolidation below the minimum count
+- `--ai-provider codex|claude` override configured provider
+- `--response-file <path>` use precomputed AI JSON response
 Examples:
 
 ```bash
@@ -117,8 +127,10 @@ Supported providers: `codex`, `claude`.
 ## Canon Layout
 `canon init` creates:
 - `.canon/specs/`
+- `.canon/archive/specs/`
 - `.canon/ledger/`
 - `.canon/sources/`
+- `.canon/archive/sources/`
 - `.canon/conflict-reports/`
 - `state/interactions/`
 

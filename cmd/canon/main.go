@@ -46,6 +46,8 @@ func run(args []string) error {
 		return cmdRender(args[1:])
 	case "status":
 		return cmdStatus(args[1:])
+	case "gc":
+		return cmdGc(args[1:])
 	case "index":
 		return cmdIndex(args[1:])
 	case "check":
@@ -435,6 +437,102 @@ func cmdRender(args []string) error {
 	return nil
 }
 
+func cmdGc(args []string) error {
+	fs := flag.NewFlagSet("gc", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	domain := fs.String("domain", "", "consolidate all specs in one domain")
+	specIDs := fs.String("specs", "", "comma separated spec ids to consolidate")
+	write := fs.Bool("write", false, "execute consolidation")
+	minSpecs := fs.Int("min-specs", 5, "minimum number of specs before consolidation")
+	force := fs.Bool("force", false, "run consolidation below minimum spec count")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "JSON response file from headless AI run")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("gc does not accept positional arguments")
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
+		return err
+	}
+	provider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		provider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+
+	ids := parseCSV(*specIDs)
+	mode := "auto"
+	if strings.TrimSpace(*responseFile) != "" {
+		mode = "from-response"
+	}
+
+	result, err := canon.GC(abs, canon.GCInput{
+		Domain:       strings.TrimSpace(*domain),
+		SpecIDs:      ids,
+		MinSpecs:     *minSpecs,
+		Force:        *force,
+		Write:        *write,
+		AIMode:       mode,
+		AIProvider:   provider,
+		ResponseFile: strings.TrimSpace(*responseFile),
+	})
+	if err != nil {
+		return err
+	}
+
+	if result.Skip {
+		fmt.Println(result.SkipReason)
+		return nil
+	}
+
+	switch result.ScopeType {
+	case "domain":
+		fmt.Printf("gc plan for domain: %s\n", result.ScopeValue)
+	case "specs":
+		fmt.Printf("gc plan for specs: %s\n", result.ScopeValue)
+	}
+	fmt.Printf("  specs to consolidate: %d\n", len(result.TargetSpecs))
+	fmt.Printf("  estimated result: %d consolidated specs\n", len(result.Consolidated))
+	if len(result.ExternalDeps) > 0 {
+		fmt.Printf("  external dependencies preserved: [%s]\n", strings.Join(result.ExternalDeps, ", "))
+	}
+
+	for i, spec := range result.Consolidated {
+		preview := strings.TrimSpace(spec.Body)
+		previewLimit := 180
+		if len(preview) > previewLimit {
+			preview = preview[:previewLimit] + "..."
+		}
+		fmt.Printf("\n  consolidated spec %d/%d:\n", i+1, len(result.Consolidated))
+		fmt.Printf("    title: %q\n", spec.Title)
+		fmt.Printf("    consolidates: [%s]\n", strings.Join(spec.Consolidates, ", "))
+		fmt.Printf("    %s\n", preview)
+	}
+
+	if !*write {
+		fmt.Println("dry run complete; use --write to execute")
+		return nil
+	}
+
+	reduction := 0
+	if len(result.TargetSpecs) > 0 {
+		reduction = int((1.0 - float64(len(result.Consolidated))/float64(len(result.TargetSpecs))) * 100)
+	}
+	fmt.Printf("gc complete for %s: %s\n", result.ScopeType, result.ScopeValue)
+	fmt.Printf("  archived: %d specs\n", len(result.TargetSpecs))
+	fmt.Printf("  created: %d consolidated specs\n", len(result.Consolidated))
+	fmt.Printf("  reduction: %d -> %d specs (%d%%)\n", len(result.TargetSpecs), len(result.Consolidated), reduction)
+	fmt.Println("run 'canon render --write' to update state")
+	return nil
+}
+
 func cmdStatus(args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -671,6 +769,7 @@ func printUsage() {
 	fmt.Println("  reset   reset canon history to a specific spec id")
 	fmt.Println("  index   build deterministic index")
 	fmt.Println("  render  render expected state from canonical specs")
+	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  status  show repository summary")
 }

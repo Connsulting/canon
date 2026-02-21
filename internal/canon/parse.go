@@ -150,6 +150,7 @@ func parseSpecText(text string, sourcePath string) (Spec, error) {
 		Created:        scalarString(meta, "created"),
 		DependsOn:      listString(meta, "depends_on"),
 		TouchedDomains: listString(meta, "touched_domains"),
+		Consolidates:   listString(meta, "consolidates"),
 		Path:           sourcePath,
 		Body:           strings.TrimSpace(body),
 	}
@@ -188,9 +189,14 @@ func canonicalSpecText(spec Spec) string {
 		"created: " + spec.Created,
 		"depends_on: " + depends,
 		"touched_domains: " + touches,
+	}
+	if len(spec.Consolidates) > 0 {
+		lines = append(lines, "consolidates: "+renderList(spec.Consolidates))
+	}
+	lines = append(lines,
 		"---",
 		strings.TrimSpace(spec.Body),
-	}
+	)
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n") + "\n"
 }
 

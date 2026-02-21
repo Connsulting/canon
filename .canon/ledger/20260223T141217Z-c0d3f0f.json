@@ -1,0 +1,14 @@
+{
+  "spec_id": "c0d3f0f",
+  "title": "Canon GC",
+  "type": "feature",
+  "domain": "tools",
+  "parents": [
+    "f3c2d71"
+  ],
+  "sequence": 1771855937436777773,
+  "ingested_at": "2026-02-23T14:12:17Z",
+  "content_hash": "12d1ca7ad52306c8c067f741e5f51a04e5b7260996f2798aaceb06b480c7c619",
+  "spec_path": ".canon/specs/c0d3f0f.spec.md",
+  "source_path": ".canon/sources/c0d3f0f.source.md"
+}

@@ -8,6 +8,7 @@ type Spec struct {
 	Created        string
 	DependsOn      []string
 	TouchedDomains []string
+	Consolidates   []string
 	Path           string
 	Body           string
 }
@@ -17,6 +18,7 @@ type LedgerEntry struct {
 	Title       string   `json:"title"`
 	Type        string   `json:"type"`
 	Domain      string   `json:"domain"`
+	Operation   string   `json:"operation,omitempty"`
 	Parents     []string `json:"parents"`
 	Sequence    int64    `json:"sequence"`
 	IngestedAt  string   `json:"ingested_at"`

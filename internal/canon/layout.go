@@ -11,6 +11,8 @@ var requiredLayout = []string{
 	".canon/ledger",
 	".canon/sources",
 	".canon/conflict-reports",
+	".canon/archive/specs",
+	".canon/archive/sources",
 	"state/interactions",
 }
 

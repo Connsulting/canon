@@ -86,6 +86,231 @@ JSON
 	}
 }
 
+func TestGcCommandDryRunNoWrite(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ID:      "api-a1",
+		Text:    "Clients must include an API key with every request.",
+		Title:   "API Key Presence",
+		Domain:  "api",
+		Created: "2026-02-21T08:00:00Z",
+	}); err != nil {
+		t.Fatalf("ingest api-a1 failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ID:      "api-b2",
+		Text:    "Expired API keys should be rejected.",
+		Title:   "API Key Expiry",
+		Domain:  "api",
+		Created: "2026-02-21T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("ingest api-b2 failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ID:      "platform-a",
+		Text:    "User identity tokens are validated at login.",
+		Title:   "Identity Validation",
+		Domain:  "platform",
+		Created: "2026-02-21T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("ingest platform-a failed: %v", err)
+	}
+
+	entriesBefore, err := canon.LoadLedger(root)
+	if err != nil {
+		t.Fatalf("LoadLedger before failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "gc-response.json")
+	response := map[string]any{
+		"model":   "test-model",
+		"summary": "Consolidate api requirements.",
+		"consolidated_specs": []any{
+			map[string]any{
+				"id":              "api-consolidated",
+				"type":            "feature",
+				"title":           "API Auth and Expiry Controls",
+				"domain":          "api",
+				"created":         "2026-02-21T10:30:00Z",
+				"depends_on":      []string{"platform-a"},
+				"touched_domains": []string{"api"},
+				"consolidates":    []string{"api-a1", "api-b2"},
+				"body":            "Clients must include API keys and expired keys must be rejected.",
+			},
+		},
+	}
+	writeGCResponse(t, responsePath, response)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"gc",
+			"--root", root,
+			"--domain", "api",
+			"--response-file", responsePath,
+			"--min-specs", "1",
+		}); err != nil {
+			t.Fatalf("gc command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "gc plan for domain: api") {
+		t.Fatalf("expected gc plan output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "dry run complete; use --write to execute") {
+		t.Fatalf("expected dry-run completion message, got:\n%s", out)
+	}
+
+	entriesAfter, err := canon.LoadLedger(root)
+	if err != nil {
+		t.Fatalf("LoadLedger after failed: %v", err)
+	}
+	if len(entriesAfter) != len(entriesBefore) {
+		t.Fatalf("expected no new ledger entries during dry run")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "api-consolidated.spec.md")); err == nil {
+		t.Fatalf("did not expect consolidated file to be written in dry run")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected error checking consolidated file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "archive", "specs", "api-a1.spec.md")); err == nil {
+		t.Fatalf("expected api-a1 to remain active during dry run")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected error checking archived api-a1 spec path: %v", err)
+	}
+}
+
+func TestGcCommandWriteConsolidatesSpecsAndArchivesSources(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ID:      "api-a1",
+		Text:    "Clients must include an API key with every request.",
+		Title:   "API Key Presence",
+		Domain:  "api",
+		Created: "2026-02-21T08:00:00Z",
+	}); err != nil {
+		t.Fatalf("ingest api-a1 failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ID:      "api-b2",
+		Text:    "Expired API keys should be rejected.",
+		Title:   "API Key Expiry",
+		Domain:  "api",
+		Created: "2026-02-21T09:00:00Z",
+	}); err != nil {
+		t.Fatalf("ingest api-b2 failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ID:      "platform-a",
+		Text:    "User identity tokens are validated at login.",
+		Title:   "Identity Validation",
+		Domain:  "platform",
+		Created: "2026-02-21T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("ingest platform-a failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "gc-response.json")
+	response := map[string]any{
+		"model":   "test-model",
+		"summary": "Consolidate api requirements.",
+		"consolidated_specs": []any{
+			map[string]any{
+				"id":              "api-consolidated",
+				"type":            "feature",
+				"title":           "API Auth and Expiry Controls",
+				"domain":          "api",
+				"created":         "2026-02-21T10:30:00Z",
+				"depends_on":      []string{"platform-a"},
+				"touched_domains": []string{"api"},
+				"consolidates":    []string{"api-a1", "api-b2"},
+				"body":            "Clients must include API keys and expired keys must be rejected.",
+			},
+		},
+	}
+	writeGCResponse(t, responsePath, response)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"gc",
+			"--root", root,
+			"--domain", "api",
+			"--write",
+			"--response-file", responsePath,
+			"--min-specs", "1",
+		}); err != nil {
+			t.Fatalf("gc command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "gc complete for domain: api") {
+		t.Fatalf("expected completion output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "run 'canon render --write' to update state") {
+		t.Fatalf("expected render instruction output, got:\n%s", out)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "api-a1.spec.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected api-a1 spec to be archived, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "archive", "specs", "api-a1.spec.md")); err != nil {
+		t.Fatalf("expected archived api-a1 spec")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "archive", "sources", "api-a1.source.md")); err != nil {
+		t.Fatalf("expected archived api-a1 source")
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "api-b2.spec.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected api-b2 spec to be archived, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "archive", "specs", "api-b2.spec.md")); err != nil {
+		t.Fatalf("expected archived api-b2 spec")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "archive", "sources", "api-b2.source.md")); err != nil {
+		t.Fatalf("expected archived api-b2 source")
+	}
+
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "api-consolidated.spec.md")); err != nil {
+		t.Fatalf("expected consolidated spec output file")
+	}
+
+	consolidatedText, err := os.ReadFile(filepath.Join(root, ".canon", "specs", "api-consolidated.spec.md"))
+	if err != nil {
+		t.Fatalf("failed to read consolidated spec: %v", err)
+	}
+	conText := string(consolidatedText)
+	if !strings.Contains(conText, "consolidates: [api-a1, api-b2]") {
+		t.Fatalf("expected consolidated frontmatter to include source ids, got:\n%s", conText)
+	}
+
+	entries, err := canon.LoadLedger(root)
+	if err != nil {
+		t.Fatalf("LoadLedger after failed: %v", err)
+	}
+	var found bool
+	var op string
+	for _, entry := range entries {
+		if entry.SpecID == "api-consolidated" {
+			found = true
+			op = entry.Operation
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected ledger entry for api-consolidated")
+	}
+	if op != "consolidation" {
+		t.Fatalf("expected ledger operation consolidation, got %q", op)
+	}
+}
+
 func TestLogGraphFlagsRenderDependencyGraph(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
@@ -685,4 +910,15 @@ func writeCLICheckResponse(t *testing.T, root string, payload map[string]any) st
 		t.Fatalf("failed writing check response: %v", err)
 	}
 	return path
+}
+
+func writeGCResponse(t *testing.T, path string, payload map[string]any) {
+	t.Helper()
+	b, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal gc response: %v", err)
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatalf("failed writing gc response: %v", err)
+	}
 }

@@ -18,6 +18,8 @@ func TestInitLayoutCreatesCanonSourceFolders(t *testing.T) {
 		".canon/ledger",
 		".canon/sources",
 		".canon/conflict-reports",
+		".canon/archive/specs",
+		".canon/archive/sources",
 		"state/interactions",
 	}
 
