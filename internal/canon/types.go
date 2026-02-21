@@ -98,7 +98,34 @@ type BlameSpec struct {
 	Created       string   `json:"created"`
 	RelevantLines []string `json:"relevant_lines"`
 }
+type CheckOptions struct {
+	Domain       string
+	SpecID       string
+	Write        bool
+	AIMode       string
+	AIProvider   string
+	ResponseFile string
+}
 
+type CheckConflict struct {
+	SpecA          string   `json:"spec_a"`
+	TitleA         string   `json:"title_a"`
+	SpecB          string   `json:"spec_b"`
+	TitleB         string   `json:"title_b"`
+	Domain         string   `json:"domain"`
+	StatementKey   string   `json:"statement_key"`
+	LineA          string   `json:"line_a"`
+	LineB          string   `json:"line_b"`
+	OverlapDomains []string `json:"-"`
+}
+
+type CheckResult struct {
+	Passed         bool            `json:"passed"`
+	TotalSpecs     int             `json:"total_specs"`
+	TotalConflicts int             `json:"total_conflicts"`
+	Conflicts      []CheckConflict `json:"conflicts"`
+	ReportPaths    []string        `json:"report_paths,omitempty"`
+}
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

@@ -15,6 +15,7 @@ Phase 1 only:
 - `go run ./cmd/canon import <spec-file>` (alias for ingest)
 - `go run ./cmd/canon raw`
 - `go run ./cmd/canon log`
+- `go run ./cmd/canon check`
 - `go run ./cmd/canon show <spec-id>`
 - `go run ./cmd/canon reset <spec-id>`
 - `go run ./cmd/canon render --write`
@@ -52,7 +53,14 @@ Blame defaults:
 - `canon blame "<text>"` uses current directory as root
 - output defaults to human readable terminal text
 - AI provider defaults from config (`./.canonconfig`, then `~/.canonconfig`, then built in `codex`)
-
+Check options:
+- `--domain <name>` restrict conflict scan to matching spec domains
+- `--spec <id>` check one spec against the remaining in-scope specs
+- `--ai auto|from-response` AI check mode (default: `auto`)
+- `--ai-provider codex|claude` AI provider override
+- `--response-file <path>` JSON response file for `from-response` mode
+- `--json` emit machine-readable JSON
+- `--write` persist conflict reports under `.canon/conflict-reports/`
 Examples:
 
 ```bash
