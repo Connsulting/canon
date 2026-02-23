@@ -4,7 +4,7 @@ type: feature
 title: "Canon Log Graph Readability Alignment"
 domain: canon-cli
 created: 2026-02-23T14:30:00Z
-depends_on: [d72f3b8]
+depends_on: [d72f3b8, c0d3f0f]
 touched_domains: [canon-cli]
 ---
 This spec aligns one line graph output from `canon log --graph` with the visual density of git styled history lines.

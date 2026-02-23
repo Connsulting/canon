@@ -4,7 +4,7 @@ type: feature
 title: Canon Log Graph Readability Alignment
 created: 2026-02-23T14:30:00Z
 domain: canon-cli
-depends_on: []
+depends_on: [d72f3b8, c0d3f0f]
 touched_domains: [canon-cli]
 ---
 
