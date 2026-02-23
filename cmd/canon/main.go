@@ -241,12 +241,12 @@ func cmdLog(args []string) error {
 	limit := fs.Int("n", 50, "max entries")
 	graph := fs.Bool("graph", false, "render dependency graph")
 	oneline := fs.Bool("oneline", false, "compact one line output")
-	all := fs.Bool("all", false, "include all disconnected heads")
+	all := fs.Bool("all", true, "include all disconnected heads")
 	grep := fs.String("grep", "", "case-insensitive title substring filter")
 	domain := fs.String("domain", "", "exact domain filter")
 	typeName := fs.String("type", "", "exact type filter")
 	color := fs.String("color", "auto", "colorize output: auto, always, never")
-	date := fs.String("date", "absolute", "timestamp format: absolute or relative")
+	date := fs.String("date", "relative", "timestamp format: absolute or relative")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -257,7 +257,6 @@ func cmdLog(args []string) error {
 
 	useLegacy := !*graph &&
 		!*oneline &&
-		!*all &&
 		strings.TrimSpace(*grep) == "" &&
 		strings.TrimSpace(*domain) == "" &&
 		strings.TrimSpace(*typeName) == "" &&

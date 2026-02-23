@@ -40,7 +40,7 @@ Log options:
 - `--domain <name>` exact domain filter
 - `--type <name>` exact type filter
 - `--color auto|always|never` ANSI color output (default: `auto`)
-- `--date absolute|relative` timestamp display mode (default: `absolute`)
+- `--date absolute|relative` timestamp display mode (default: `relative`)
 - `-n <count>` max rows (defaults to 50)
 
 Blame options:

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -351,6 +352,51 @@ func TestLogGraphFlagsRenderDependencyGraph(t *testing.T) {
 	}
 	if strings.Contains(out, "|->") {
 		t.Fatalf("did not expect separate dependency edge lines, got:\n%s", out)
+	}
+}
+
+func TestLogDefaultsUseRelativeDatesAndAllHeads(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:      "Auth requirements with no dependencies.",
+		ID:        "auth-a1",
+		Title:     "Auth Baseline",
+		Type:      "feature",
+		Domain:    "auth",
+		Created:   "2026-02-19T10:00:00Z",
+		Parents:   nil,
+		DependsOn: nil,
+	}); err != nil {
+		t.Fatalf("Ingest auth-a1 failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:      "Billing requirements with no dependencies.",
+		ID:        "billing-a1",
+		Title:     "Billing Baseline",
+		Type:      "feature",
+		Domain:    "billing",
+		Created:   "2026-02-18T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("Ingest billing-a1 failed: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"log", "--root", root}); err != nil {
+			t.Fatalf("log command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Spec: auth-a1") || !strings.Contains(out, "Spec: billing-a1") {
+		t.Fatalf("expected both disconnected heads with default --all behavior, got:\n%s", out)
+	}
+
+	relativeDate := regexp.MustCompile(`\b(ago|just now|in moments|from now)\b`)
+	if !relativeDate.MatchString(out) {
+		t.Fatalf("expected relative date output by default, got:\n%s", out)
 	}
 }
 
