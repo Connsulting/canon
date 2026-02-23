@@ -1,0 +1,14 @@
+{
+  "spec_id": "b3f2d9c",
+  "title": "Canon Log Graph Readability Alignment",
+  "type": "feature",
+  "domain": "canon-cli",
+  "parents": [
+    "d72f3b8"
+  ],
+  "sequence": 1771856149436255815,
+  "ingested_at": "2026-02-23T14:15:49Z",
+  "content_hash": "32eabece7d4ed091e4f8474f5ea08139d59ee6907a24582d294638d203a7b1cf",
+  "spec_path": ".canon/specs/b3f2d9c.spec.md",
+  "source_path": ".canon/sources/b3f2d9c.source.md"
+}

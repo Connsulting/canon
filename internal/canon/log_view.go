@@ -223,6 +223,23 @@ func graphConnector(curr []string, next []string, active int, opts LogOptions) s
 		out[i] = " "
 	}
 
+	if len(next) == len(curr) {
+		changed := false
+		for i := range curr {
+			if i == active {
+				continue
+			}
+			if curr[i] != next[i] {
+				changed = true
+				break
+			}
+		}
+		if !changed {
+			out[active] = colorize(opts, "90", "|")
+			return strings.TrimRight(strings.Join(out, ""), " ")
+		}
+	}
+
 	for i := range next {
 		out[i] = colorize(opts, "90", "|")
 	}

@@ -154,6 +154,44 @@ func TestRenderLogTextGraphIncludesEdges(t *testing.T) {
 	}
 }
 
+func TestRenderLogTextGraphUsesCompactSameLevelConnectorRows(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	ingestLogSpec(t, root, "spec-a", "Auth Base", "auth", "feature", "2026-02-19T10:00:00Z", nil, nil)
+	ingestLogSpec(t, root, "spec-b", "Rate Limits", "api", "feature", "2026-02-19T10:10:00Z", []string{"spec-a"}, nil)
+	ingestLogSpec(t, root, "spec-c", "Billing Hooks", "billing", "feature", "2026-02-19T10:20:00Z", []string{"spec-a"}, nil)
+	ingestLogSpec(t, root, "spec-d", "Merge Point", "billing", "feature", "2026-02-19T10:30:00Z", []string{"spec-b", "spec-c"}, nil)
+
+	opts := LogOptions{
+		Limit:   50,
+		Graph:   true,
+		OneLine: true,
+		All:     true,
+	}
+	nodes, err := BuildLogView(root, opts)
+	if err != nil {
+		t.Fatalf("BuildLogView failed: %v", err)
+	}
+	text := RenderLogText(nodes, opts)
+
+	hasSoloConnector := false
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == "|" {
+			hasSoloConnector = true
+			break
+		}
+	}
+	if !hasSoloConnector {
+		t.Fatalf("expected compact connector line in graph output, got:\n%s", text)
+	}
+	if strings.Contains(text, "| | | |") {
+		t.Fatalf("expected compact branch connectors, got:\n%s", text)
+	}
+}
+
 func TestBuildLogViewMarksCycleNodes(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {
