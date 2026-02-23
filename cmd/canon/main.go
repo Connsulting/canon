@@ -247,6 +247,7 @@ func cmdLog(args []string) error {
 	typeName := fs.String("type", "", "exact type filter")
 	color := fs.String("color", "auto", "colorize output: auto, always, never")
 	date := fs.String("date", "relative", "timestamp format: absolute or relative")
+	showTags := fs.Bool("show-tags", false, "include qualified [type/domain] tags")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -311,6 +312,7 @@ func cmdLog(args []string) error {
 		Color:   *color,
 		IsTTY:   isTTY(os.Stdout),
 		Date:    *date,
+		ShowTags: *showTags,
 	}
 	nodes, err := canon.BuildLogViewForCLI(abs, opts)
 	if err != nil {

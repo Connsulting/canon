@@ -192,6 +192,52 @@ func TestRenderLogTextGraphUsesCompactSameLevelConnectorRows(t *testing.T) {
 	}
 }
 
+func TestRenderLogTextOnelineHidesQualifiedTagsByDefault(t *testing.T) {
+	nodes := []LogNode{
+		{
+			ID: "spec-auth",
+			Spec: &Spec{
+				ID:     "spec-auth",
+				Title:  "Auth Baseline",
+				Type:   "feature",
+				Domain: "auth",
+			},
+		},
+	}
+
+	text := RenderLogText(nodes, LogOptions{
+		OneLine: true,
+	})
+	if !strings.Contains(text, "Auth Baseline") {
+		t.Fatalf("expected title in output, got:\n%s", text)
+	}
+	if strings.Contains(text, "[feature/auth]") {
+		t.Fatalf("did not expect qualified tags by default, got:\n%s", text)
+	}
+}
+
+func TestRenderLogTextOnelineIncludesQualifiedTagsWithFlag(t *testing.T) {
+	nodes := []LogNode{
+		{
+			ID: "spec-auth",
+			Spec: &Spec{
+				ID:     "spec-auth",
+				Title:  "Auth Baseline",
+				Type:   "feature",
+				Domain: "auth",
+			},
+		},
+	}
+
+	text := RenderLogText(nodes, LogOptions{
+		OneLine:  true,
+		ShowTags: true,
+	})
+	if !strings.Contains(text, "[feature/auth]") {
+		t.Fatalf("expected qualified tags when --show-tags is enabled, got:\n%s", text)
+	}
+}
+
 func TestBuildLogViewMarksCycleNodes(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {

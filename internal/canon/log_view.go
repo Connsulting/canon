@@ -18,6 +18,7 @@ type LogOptions struct {
 	Color   string
 	IsTTY   bool
 	Date    string
+	ShowTags bool
 }
 
 type LogNode struct {
@@ -295,12 +296,13 @@ func renderOneLine(node LogNode, opts LogOptions) string {
 	when = formatLogTime(when, opts)
 
 	line := fmt.Sprintf(
-		"%s %s [%s/%s]",
+		"%s %s",
 		colorize(opts, "32", node.ID),
 		colorize(opts, "33", title),
-		colorize(opts, "36", typ),
-		colorize(opts, "34", domain),
 	)
+	if opts.ShowTags {
+		line += fmt.Sprintf(" [%s/%s]", colorize(opts, "36", typ), colorize(opts, "34", domain))
+	}
 	if when != "" {
 		line += " " + colorize(opts, "35", when)
 	}
@@ -326,10 +328,10 @@ func renderDetailedBlock(node LogNode, opts LogOptions) []string {
 		if strings.TrimSpace(node.Spec.Title) != "" {
 			lines = append(lines, "Title: "+colorize(opts, "33", node.Spec.Title))
 		}
-		if strings.TrimSpace(node.Spec.Type) != "" {
+		if opts.ShowTags && strings.TrimSpace(node.Spec.Type) != "" {
 			lines = append(lines, "Type: "+colorize(opts, "36", node.Spec.Type))
 		}
-		if strings.TrimSpace(node.Spec.Domain) != "" {
+		if opts.ShowTags && strings.TrimSpace(node.Spec.Domain) != "" {
 			lines = append(lines, "Domain: "+colorize(opts, "34", node.Spec.Domain))
 		}
 	}

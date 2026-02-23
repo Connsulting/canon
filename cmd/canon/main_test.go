@@ -355,6 +355,57 @@ func TestLogGraphFlagsRenderDependencyGraph(t *testing.T) {
 	}
 }
 
+func TestLogShowTagsFlag(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:      "Base auth requirement.",
+		ID:        "spec-a",
+		Title:     "Auth Base",
+		Type:      "feature",
+		Domain:    "auth",
+		Created:   "2026-02-19T10:00:00Z",
+		Parents:   nil,
+		DependsOn: nil,
+	}); err != nil {
+		t.Fatalf("Ingest spec-a failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:      "API depends on auth.",
+		ID:        "spec-b",
+		Title:     "Rate Limits",
+		Type:      "feature",
+		Domain:    "api",
+		DependsOn: []string{"spec-a"},
+	}); err != nil {
+		t.Fatalf("Ingest spec-b failed: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"log", "--root", root, "--graph", "--oneline", "--all"}); err != nil {
+			t.Fatalf("log command failed: %v", err)
+		}
+	})
+	if strings.Contains(out, "[feature/auth]") || strings.Contains(out, "[feature/api]") {
+		t.Fatalf("expected qualified tags hidden by default, got:\n%s", out)
+	}
+
+	out = captureStdout(t, func() {
+		if err := run([]string{"log", "--root", root, "--graph", "--oneline", "--all", "--show-tags"}); err != nil {
+			t.Fatalf("log command with --show-tags failed: %v", err)
+		}
+	})
+	if !strings.Contains(out, "[feature/auth]") {
+		t.Fatalf("expected qualified tag for spec-a with --show-tags, got:\n%s", out)
+	}
+	if !strings.Contains(out, "[feature/api]") {
+		t.Fatalf("expected qualified tag for spec-b with --show-tags, got:\n%s", out)
+	}
+}
+
 func TestLogDefaultsUseRelativeDatesAndAllHeads(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
