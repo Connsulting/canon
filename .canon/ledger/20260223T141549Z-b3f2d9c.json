@@ -4,7 +4,8 @@
   "type": "feature",
   "domain": "canon-cli",
   "parents": [
-    "d72f3b8"
+    "d72f3b8",
+    "c0d3f0f"
   ],
   "sequence": 1771856149436255815,
   "ingested_at": "2026-02-23T14:15:49Z",
