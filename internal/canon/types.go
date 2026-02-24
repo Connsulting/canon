@@ -39,6 +39,7 @@ type IngestInput struct {
 	DependsOn      []string
 	TouchedDomains []string
 	Parents        []string
+	NoAutoParents  bool
 	ConflictMode   string
 	ResponseFile   string
 	AIProvider     string

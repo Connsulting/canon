@@ -1,0 +1,14 @@
+{
+  "spec_id": "a94f2c1",
+  "title": "Canon Init: AI-Powered Project Initialization",
+  "type": "feature",
+  "domain": "canon-cli",
+  "parents": [
+    "b3f2d9c"
+  ],
+  "sequence": 1771930718033786927,
+  "ingested_at": "2026-02-24T10:58:38Z",
+  "content_hash": "f99cab4129c359813b1df2eae7235508351f9add9792ab80fce83908a212c468",
+  "spec_path": ".canon/specs/a94f2c1.spec.md",
+  "source_path": ".canon/sources/a94f2c1.source.md"
+}

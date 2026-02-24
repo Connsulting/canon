@@ -1,0 +1,325 @@
+# Canon Init: AI-Powered Project Initialization
+
+## Problem
+
+Today `canon init` only scaffolds the `.canon/` directory structure. A team adopting Canon on an existing project must manually author every spec from scratch — a cold-start problem that makes adoption painful. The user must already understand Canon's spec model, choose how to decompose their project into domains, and write well-formed specs before they get any value.
+
+What teams actually need is a command that looks at an existing codebase, understands what the project does, and produces a starter set of canonical specs that capture the project's current product intent. This bootstrap dramatically lowers the barrier to adoption and gives the user something concrete to review from minute one.
+
+## Proposed Solution
+
+Extend `canon init` with an AI-powered project scan phase. When run in a directory with existing code, the command:
+
+1. Scans the project to build a structural understanding (files, directories, configs, docs, READMEs, code).
+2. Sends project context to an AI provider to decompose the project into discrete domains and specs.
+3. Produces **2–10 draft specs** as individual `.spec.md` files staged for user review.
+4. Presents specs one at a time in an interactive review flow where the user can accept, skip, or edit each spec before it is ingested into `.canon/`.
+
+The key insight: we are NOT trying to produce one monolithic document. We break the project down into the smallest reasonable spec units so the user can review, understand, and approve each one independently.
+
+## Implementation Status (2026-02-24)
+
+The following functionality is now implemented in `task/canon-init`:
+
+1. CLI integration in `canon init` for:
+   - `--ai`
+   - `--ai-provider`
+   - `--response-file`
+   - `--no-interactive`
+   - `--accept-all`
+   - `--max-specs`
+   - `--context-limit`
+   - repeatable `--include`
+   - repeatable `--exclude`
+
+2. Scanner implementation with:
+   - depth-limited tree context
+   - file prioritization and per-file truncation
+   - global context budget enforcement
+   - `.gitignore` support
+   - include and exclude glob support
+   - skip rules for `.git`, `.canon*`, `state`, `node_modules`, `vendor`, build outputs, cache and venv folders
+   - binary extension filtering including Python cache artifacts (`.pyc`, `.pyo`)
+
+3. AI decomposition pipeline:
+   - `auto` execution through provider runtime (`codex` or `claude`)
+   - `from-response` execution via `--response-file`
+   - strict JSON decode with tolerant extraction for wrapped responses
+   - fallback bootstrap spec from README when `auto` provider execution fails
+   - ID collision handling with regenerated 7-char IDs
+   - dependency ordered drafts with max-spec truncation after ordering
+
+4. Interactive review flow:
+   - one-at-a-time review with `[a]ccept`, `[s]kip`, `[e]dit`, `[v]iew full`, `[q]uit`
+   - accepted specs ingest via normal ingest pipeline
+   - skipped or deferred specs written to `specs/init-drafts/`
+   - non-interactive accept-all behavior through flags and non-TTY detection
+
+5. Prompt quality refinements:
+   - enforce command and subsystem scoped decomposition over one catch-all spec
+   - enforce major folder coverage where high signal folders exist
+   - enforce explicit config and runtime coverage when config or env wiring is present
+   - enforce richer spec bodies with multiple concrete behavior statements
+
+6. Validation completed:
+   - unit and CLI tests added for init paths, collision handling, fallback behavior, and scanner exclusions
+   - manual end-to-end runs on this repo and on additional repositories:
+     - `claude-code-plugins`
+     - `claude-observability-assessment`
+   - iterative pass based improvements were applied and revalidated
+
+---
+
+## Detailed Requirements
+
+### 1. Project Scanning
+
+The init command must gather enough context for AI to understand the project without sending the entire codebase.
+
+**What to scan:**
+
+| Signal | Purpose |
+|--------|---------|
+| Top-level README and docs | Project purpose, high-level architecture |
+| Directory tree (depth-limited) | Structural layout, module boundaries |
+| Package manifests (`package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, etc.) | Dependencies, project metadata |
+| Config files (`.env.example`, `docker-compose.yml`, CI configs) | Infrastructure and deployment shape |
+| Entry points (`main.*`, `index.*`, `app.*`, `cmd/`) | Core execution paths |
+| Database schemas/migrations | Data model |
+| API route definitions | Interface surface |
+| Existing documentation (`docs/`, `ARCHITECTURE.md`, `CONTRIBUTING.md`) | Existing domain knowledge |
+| `.gitignore` patterns | What to exclude from scanning |
+
+**What NOT to scan:**
+
+- Binary files, images, fonts
+- `node_modules/`, `vendor/`, `.git/`, build output directories
+- Files larger than a configurable threshold (default: 50 KB)
+- Files matching `.gitignore` patterns
+
+**Context budget:** The total scan payload sent to AI must fit within provider context limits. The scanner should prioritize high-signal files (docs, configs, entry points) and truncate or summarize low-signal files (large source files). A hard ceiling on total context size must be enforced (configurable, default: 100 KB of text).
+
+### 2. AI Decomposition
+
+The AI provider receives the scanned project context and must return a structured JSON response containing **2–10 specs** that decompose the project.
+
+**Decomposition strategy the AI must follow:**
+
+- Each spec should cover one coherent domain or concern (e.g., "Authentication", "API Layer", "Database Schema", "CI/CD Pipeline", "Frontend Routing").
+- Specs should be typed appropriately: `feature` for user-facing capabilities, `technical` for architecture/infrastructure concerns.
+- Specs should declare `depends_on` relationships where meaningful (e.g., "API Layer" depends on "Database Schema").
+- Specs should declare `touched_domains` for cross-cutting concerns.
+- The AI should prefer fewer, well-scoped specs over many trivial ones. The target is the minimum number of specs needed to capture the project's current product intent.
+- Each spec body should describe **what the project currently does** in that domain — not aspirational features or TODOs. This is a snapshot of existing intent.
+
+**AI response schema:**
+
+```json
+{
+  "model": "string",
+  "project_summary": "One paragraph summary of the project",
+  "specs": [
+    {
+      "id": "7-char-hex",
+      "type": "feature|technical",
+      "title": "string",
+      "domain": "string",
+      "depends_on": ["spec-id"],
+      "touched_domains": ["domain"],
+      "body": "markdown",
+      "review_hint": "One sentence explaining why this spec exists"
+    }
+  ]
+}
+```
+
+The `review_hint` field is shown to the user during interactive review to help them quickly understand each spec's purpose.
+
+**Fallback behavior:** If AI fails (network error, timeout, malformed response) and `--ai auto` is set, the command should fall back to generating a single minimal spec with the project's README content as the body, plus a warning that AI decomposition was unavailable.
+
+### 3. Interactive Review Flow
+
+After AI produces the draft specs, the command enters an interactive review loop. Specs are presented **one at a time**, ordered by dependency (specs with no dependencies first).
+
+**For each spec, the user sees:**
+
+```
+[1/6] Authentication & Authorization
+      Domain: auth | Type: feature | Depends on: (none)
+      Hint: Captures the existing OAuth2 login flow and role-based access control.
+
+      --- preview ---
+      (first ~20 lines of the spec body)
+      --- end preview ---
+
+  [a]ccept  [s]kip  [e]dit  [v]iew full  [q]uit
+```
+
+**Actions:**
+
+| Key | Behavior |
+|-----|----------|
+| `a` (accept) | Ingest the spec into `.canon/` using the standard ingest pipeline (ledger entry, source snapshot, canonical spec file). Move to next spec. |
+| `s` (skip) | Do not ingest this spec. Write it to a `specs/init-drafts/` directory so the user can revisit it later. Move to next spec. |
+| `e` (edit) | Open the spec in `$EDITOR` (fall back to `vi`). After the editor closes, re-display the spec and prompt again. |
+| `v` (view full) | Print the full spec body to stdout, then re-prompt. |
+| `q` (quit) | Stop the review. Any remaining unreviewed specs are written to `specs/init-drafts/`. Print a summary of what was accepted and what was deferred. |
+
+**Non-interactive mode (`--no-interactive`):** Accept all specs automatically. Useful for CI or scripted workflows.
+
+**Batch accept (`--accept-all`):** Alias for non-interactive. Ingests all generated specs without review.
+
+### 4. Draft Output for Skipped/Deferred Specs
+
+Specs that are skipped or deferred (user quits early) are written to `specs/init-drafts/<slug>.md` so they can be manually reviewed and ingested later with `canon ingest`.
+
+The `specs/init-drafts/` directory is created on first use. These are standard markdown files with YAML frontmatter — they can be ingested with `canon ingest` without modification.
+
+### 5. Idempotency and Re-runs
+
+- If `.canon/specs/` already contains specs, `canon init` should warn the user: `"Canon repository already contains N specs. Re-running init will generate new draft specs without affecting existing ones."`
+- Re-running init should NOT delete or overwrite existing canonical specs.
+- Generated spec IDs must not collide with existing spec IDs. The AI response IDs are treated as suggestions; if a collision is detected, a new ID is generated deterministically.
+
+### 6. CLI Interface
+
+```
+canon init [options]
+
+Options:
+  --root <path>         Repository root (default: ".")
+  --ai <mode>           AI mode: off, auto (default: "auto")
+  --ai-provider <name>  AI provider: codex, claude (default: from .canonconfig)
+  --response-file <path> Pre-computed AI response JSON (for headless/testing)
+  --no-interactive      Accept all generated specs without review
+  --accept-all          Alias for --no-interactive
+  --max-specs <n>       Maximum number of specs to generate (default: 10)
+  --context-limit <kb>  Max KB of project context to send to AI (default: 100)
+  --include <glob>      Additional file patterns to include in scan
+  --exclude <glob>      Additional file patterns to exclude from scan
+```
+
+**When `--ai off`:** Only create the directory layout (current behavior). No scanning, no spec generation.
+
+**When `--ai auto` (default):** Create directory layout, then run AI project scan and interactive review.
+
+### 7. AI Provider Integration
+
+Uses the same provider abstraction as existing ingest/render:
+
+- **codex:** `codex exec` with `--output-schema` and stdin prompt
+- **claude:** `claude --print --output-format json --json-schema`
+
+The prompt sent to the AI provider must include:
+1. The scanned project context
+2. The decomposition instructions (number of specs, typing rules, dependency rules)
+3. The JSON response schema
+4. Existing canonical specs (if any, for collision avoidance and continuity)
+
+### 8. Progress Reporting
+
+Since scanning and AI inference can be slow, the command must provide progress feedback:
+
+```
+Scanning project...
+  Found 142 files (38 included in context, 104 excluded)
+  Context size: 67 KB / 100 KB limit
+Requesting AI decomposition...
+  Provider: claude
+  Generating specs... done (6 specs produced)
+
+Starting interactive review (6 specs to review):
+```
+
+---
+
+## Non-Goals
+
+- **Code generation.** Init does not generate application code. It generates specs that describe what exists.
+- **Diff against code.** Init does not validate whether the generated specs are "correct" relative to the code. It's a best-effort snapshot of intent for the user to review.
+- **Incremental re-scan.** Init is a one-time bootstrap. Ongoing spec maintenance uses `ingest` and `raw`. A future `canon scan` command could handle incremental updates but is out of scope.
+- **Multi-language analysis.** The scanner reads files as text. It does not parse ASTs or understand language-specific semantics.
+- **Automatic conflict resolution.** Generated specs are ingested one at a time. If a generated spec conflicts with a previously accepted one, the user must handle it the same way as any other conflict.
+
+---
+
+## Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| Empty project (no files) | Create layout only. Print: "No project files found. Skipping AI scan." |
+| Project with only binary files | Same as empty — no scannable context. |
+| AI returns 0 specs | Print warning. Create layout only. |
+| AI returns >max-specs | Truncate to `--max-specs` limit, keeping the first N in dependency order. |
+| AI returns malformed JSON | If `--ai auto`, fall back to layout-only with warning. If `--response-file`, error. |
+| User's `$EDITOR` is unset | Fall back to `vi`. If `vi` is not found, skip edit functionality with a message. |
+| Spec ID collision with existing spec | Generate a new deterministic ID using SHA256 of timestamp + title (same as current ID generation). |
+| Stdin is not a TTY (piped input) | Behave as `--no-interactive`. |
+| Very large project (>100 KB context) | Truncate lower-priority files. Warn user about truncation. |
+
+---
+
+## Validation Plan
+
+### Unit Tests
+- Scanner correctly identifies and prioritizes files by type
+- Scanner respects `.gitignore`, exclude patterns, and size limits
+- Context budget enforcement (truncation at limit)
+- AI response parsing with valid, malformed, and empty responses
+- Spec ID collision detection and re-generation
+- Review flow state machine (accept/skip/edit/quit transitions)
+
+### Integration Tests
+- End-to-end: `canon init` on a synthetic test project produces specs and layout
+- End-to-end: `--no-interactive` mode ingests all specs without prompting
+- End-to-end: `--ai off` creates layout only (backward compatible)
+- End-to-end: `--response-file` with pre-computed JSON produces expected specs
+- Skipped specs appear in `specs/init-drafts/`
+- Re-run on existing repo warns and does not clobber existing specs
+
+### Manual Testing
+- Run on 2–3 real open-source projects of different sizes and languages
+- Verify specs are coherent, non-overlapping, and useful as a starting point
+- Verify review flow is intuitive in a real terminal
+
+---
+
+## Implementation Phases
+
+### Phase A: Project Scanner
+- Implement file discovery, filtering, and prioritization
+- Implement context budget with truncation
+- Add `--include` and `--exclude` glob support
+- Unit tests for scanner
+
+### Phase B: AI Decomposition Pipeline
+- Build the prompt template for project decomposition
+- Implement AI response parsing (new schema, distinct from ingest schema)
+- Implement fallback on AI failure
+- Wire up codex and claude providers
+- Support `--response-file` for headless/testing
+- Unit tests for AI pipeline
+
+### Phase C: Interactive Review Flow
+- Implement the review loop (accept/skip/edit/view/quit)
+- Wire accepted specs into the existing `Ingest` pipeline
+- Write skipped specs to `specs/init-drafts/`
+- Implement `--no-interactive` / `--accept-all`
+- Handle non-TTY detection
+- Unit and integration tests
+
+### Phase D: CLI Integration
+- Extend `cmdInit` in `main.go` with new flags
+- Implement progress reporting
+- Update `printUsage()` help text
+- Ensure `--ai off` preserves current behavior exactly
+- End-to-end integration tests
+
+---
+
+## Open Questions
+
+1. **Should init also generate a `render` after ingesting specs?** It would be convenient to end with a fully populated `state/` directory, but it adds latency and could be a separate step.
+2. **Should there be a `--dry-run` that shows what specs would be generated without ingesting anything?** This could be useful for teams that want to preview before committing.
+3. **Should the scanner support a `.canonignore` file for init-specific exclusions?** Or is `--exclude` sufficient?
+4. **Should the AI prompt include example specs from this repo as few-shot examples?** This could improve output quality but increases context usage.
