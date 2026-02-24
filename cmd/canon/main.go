@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,6 +14,11 @@ import (
 
 	"canon/internal/canon"
 )
+
+//go:embed VERSION
+var embeddedVersion string
+
+var version = resolvedVersion(embeddedVersion)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -54,6 +60,8 @@ func run(args []string) error {
 		return cmdCheck(args[1:])
 	case "blame":
 		return cmdBlame(args[1:])
+	case "version", "-v", "--version":
+		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -812,6 +820,24 @@ func cmdCheck(args []string) error {
 	}
 	return nil
 }
+
+func cmdVersion(args []string) error {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	short := fs.Bool("short", false, "print version only")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("version does not accept positional arguments")
+	}
+	if *short {
+		fmt.Println(version)
+		return nil
+	}
+	fmt.Printf("canon %s\n", version)
+	return nil
+}
+
 func printUsage() {
 	fmt.Println("usage: canon <command> [options]")
 	fmt.Println()
@@ -829,6 +855,7 @@ func printUsage() {
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  status  show repository summary")
+	fmt.Println("  version print CLI version")
 	fmt.Println()
 	fmt.Println("init options:")
 	fmt.Println("  --root <path>          repository root (default: \".\")")
@@ -977,4 +1004,12 @@ func renderCheckText(result canon.CheckResult) string {
 	}
 	lines = append(lines, fmt.Sprintf("check failed: %d conflicts across %d specs", result.TotalConflicts, result.TotalSpecs))
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func resolvedVersion(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "v0.0.0"
+	}
+	return trimmed
 }

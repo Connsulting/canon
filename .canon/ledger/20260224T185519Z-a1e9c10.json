@@ -1,0 +1,14 @@
+{
+  "spec_id": "a1e9c10",
+  "title": "Executable Release Automation",
+  "type": "technical",
+  "domain": "release",
+  "parents": [
+    "a94f2c1"
+  ],
+  "sequence": 1771959319429458257,
+  "ingested_at": "2026-02-24T18:55:19Z",
+  "content_hash": "3f266bb5ea0b30511bd0c5b239bb6d6472b204c16c5b70555a445b267cd6df4b",
+  "spec_path": ".canon/specs/a1e9c10.spec.md",
+  "source_path": ".canon/sources/a1e9c10.source.md"
+}

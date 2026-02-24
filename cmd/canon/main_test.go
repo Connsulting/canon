@@ -13,6 +13,52 @@ import (
 	"canon/internal/canon"
 )
 
+func TestVersionCommandPrintsCurrentVersion(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := run([]string{"version"}); err != nil {
+			t.Fatalf("version command failed: %v", err)
+		}
+	})
+
+	if strings.TrimSpace(out) != "canon v0.1.0" {
+		t.Fatalf("expected version output, got %q", out)
+	}
+}
+
+func TestVersionFlagAliasPrintsCurrentVersion(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := run([]string{"--version"}); err != nil {
+			t.Fatalf("--version command failed: %v", err)
+		}
+	})
+
+	if strings.TrimSpace(out) != "canon v0.1.0" {
+		t.Fatalf("expected version output, got %q", out)
+	}
+}
+
+func TestVersionCommandShortPrintsVersionOnly(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := run([]string{"version", "--short"}); err != nil {
+			t.Fatalf("version --short command failed: %v", err)
+		}
+	})
+
+	if strings.TrimSpace(out) != "v0.1.0" {
+		t.Fatalf("expected short version output, got %q", out)
+	}
+}
+
+func TestVersionCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"version", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for version positional args")
+	}
+	if !strings.Contains(err.Error(), "version does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRenderDefaultsToAIRenderAndWritesStateFolder(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
