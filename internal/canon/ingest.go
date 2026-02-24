@@ -62,7 +62,7 @@ func Ingest(root string, input IngestInput) (IngestResult, error) {
 	}
 
 	parents := normalizeList(input.Parents)
-	if len(parents) == 0 {
+	if len(parents) == 0 && !input.NoAutoParents {
 		heads := ledgerHeads(ledgerEntries)
 		if len(heads) == 0 {
 			parents = []string{}

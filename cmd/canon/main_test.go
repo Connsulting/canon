@@ -87,6 +87,94 @@ JSON
 	}
 }
 
+func TestInitCommandAIOffCreatesLayoutOnly(t *testing.T) {
+	root := t.TempDir()
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"init", "--root", root, "--ai", "off"}); err != nil {
+			t.Fatalf("init command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "layout ready at") {
+		t.Fatalf("expected layout message, got:\n%s", out)
+	}
+	if st, err := os.Stat(filepath.Join(root, ".canon", "specs")); err != nil || !st.IsDir() {
+		t.Fatalf("expected .canon/specs directory to exist, err=%v", err)
+	}
+	specs, err := canon.LoadSpecsForCLI(root)
+	if err != nil {
+		t.Fatalf("LoadSpecsForCLI failed: %v", err)
+	}
+	if len(specs) != 0 {
+		t.Fatalf("expected no specs for --ai off, got %d", len(specs))
+	}
+}
+
+func TestInitCommandResponseFileAcceptAllIngestsSpecs(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "init-response.json")
+	response := map[string]any{
+		"model":           "test-model",
+		"project_summary": "Sample project.",
+		"specs": []map[string]any{
+			{
+				"id":              "a1a1a1a",
+				"type":            "feature",
+				"title":           "Auth",
+				"domain":          "auth",
+				"depends_on":      []string{},
+				"touched_domains": []string{"auth"},
+				"body":            "Users can sign in.",
+				"review_hint":     "Auth hint.",
+			},
+			{
+				"id":              "b2b2b2b",
+				"type":            "technical",
+				"title":           "API",
+				"domain":          "api",
+				"depends_on":      []string{"a1a1a1a"},
+				"touched_domains": []string{"api", "auth"},
+				"body":            "API validates auth tokens.",
+				"review_hint":     "API hint.",
+			},
+		},
+	}
+	writeGCResponse(t, responsePath, response)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"init", "--root", root, "--response-file", responsePath, "--accept-all"}); err != nil {
+			t.Fatalf("init command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Generating specs... done (2 specs produced)") {
+		t.Fatalf("expected generation output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "layout ready at") {
+		t.Fatalf("expected final layout message, got:\n%s", out)
+	}
+
+	specs, err := canon.LoadSpecsForCLI(root)
+	if err != nil {
+		t.Fatalf("LoadSpecsForCLI failed: %v", err)
+	}
+	if len(specs) != 2 {
+		t.Fatalf("expected 2 ingested specs, got %d", len(specs))
+	}
+	entries, err := canon.LoadLedger(root)
+	if err != nil {
+		t.Fatalf("LoadLedger failed: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 ledger entries, got %d", len(entries))
+	}
+}
+
 func TestGcCommandDryRunNoWrite(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
@@ -425,12 +513,12 @@ func TestLogDefaultsUseRelativeDatesAndAllHeads(t *testing.T) {
 		t.Fatalf("Ingest auth-a1 failed: %v", err)
 	}
 	if _, err := canon.Ingest(root, canon.IngestInput{
-		Text:      "Billing requirements with no dependencies.",
-		ID:        "billing-a1",
-		Title:     "Billing Baseline",
-		Type:      "feature",
-		Domain:    "billing",
-		Created:   "2026-02-18T10:00:00Z",
+		Text:    "Billing requirements with no dependencies.",
+		ID:      "billing-a1",
+		Title:   "Billing Baseline",
+		Type:    "feature",
+		Domain:  "billing",
+		Created: "2026-02-18T10:00:00Z",
 	}); err != nil {
 		t.Fatalf("Ingest billing-a1 failed: %v", err)
 	}

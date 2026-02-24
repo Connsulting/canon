@@ -66,6 +66,17 @@ func run(args []string) error {
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
+	aiMode := fs.String("ai", "auto", "AI mode: off, auto")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "precomputed AI response JSON")
+	noInteractive := fs.Bool("no-interactive", false, "accept all generated specs without prompting")
+	acceptAll := fs.Bool("accept-all", false, "alias for --no-interactive")
+	maxSpecs := fs.Int("max-specs", 10, "maximum number of generated specs")
+	contextLimit := fs.Int("context-limit", 100, "max project context size in KB")
+	var include stringSliceFlag
+	var exclude stringSliceFlag
+	fs.Var(&include, "include", "additional glob pattern to include in scan (repeatable)")
+	fs.Var(&exclude, "exclude", "additional glob pattern to exclude from scan (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -73,9 +84,54 @@ func cmdInit(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := canon.EnsureLayout(abs, true); err != nil {
+
+	mode := strings.ToLower(strings.TrimSpace(*aiMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
+		mode = "from-response"
+	}
+	if mode != "off" && mode != "auto" && mode != "from-response" {
+		return fmt.Errorf("unsupported init ai mode: %s", mode)
+	}
+	if mode == "off" && strings.TrimSpace(*responseFile) != "" {
+		return errors.New("--response-file cannot be used when --ai off")
+	}
+
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
 		return err
 	}
+	provider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		provider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+
+	if mode == "off" {
+		if err := canon.EnsureLayout(abs, true); err != nil {
+			return err
+		}
+		fmt.Printf("layout ready at %s\n", filepath.ToSlash(abs))
+		return nil
+	}
+
+	interactive := !*noInteractive && !*acceptAll && isTTY(os.Stdin)
+	if _, err := canon.Init(abs, canon.InitOptions{
+		AIMode:       mode,
+		AIProvider:   provider,
+		ResponseFile: strings.TrimSpace(*responseFile),
+		Interactive:  interactive,
+		MaxSpecs:     *maxSpecs,
+		ContextLimit: *contextLimit,
+		Include:      include.Values(),
+		Exclude:      exclude.Values(),
+		In:           os.Stdin,
+		Out:          os.Stdout,
+	}); err != nil {
+		return err
+	}
+
 	fmt.Printf("layout ready at %s\n", filepath.ToSlash(abs))
 	return nil
 }
@@ -302,16 +358,16 @@ func cmdLog(args []string) error {
 	}
 
 	opts := canon.LogOptions{
-		Limit:   *limit,
-		Graph:   *graph,
-		OneLine: *oneline,
-		All:     *all,
-		Grep:    *grep,
-		Domain:  *domain,
-		Type:    *typeName,
-		Color:   *color,
-		IsTTY:   isTTY(os.Stdout),
-		Date:    *date,
+		Limit:    *limit,
+		Graph:    *graph,
+		OneLine:  *oneline,
+		All:      *all,
+		Grep:     *grep,
+		Domain:   *domain,
+		Type:     *typeName,
+		Color:    *color,
+		IsTTY:    isTTY(os.Stdout),
+		Date:     *date,
 		ShowTags: *showTags,
 	}
 	nodes, err := canon.BuildLogViewForCLI(abs, opts)
@@ -760,7 +816,7 @@ func printUsage() {
 	fmt.Println("usage: canon <command> [options]")
 	fmt.Println()
 	fmt.Println("commands:")
-	fmt.Println("  init    create required repository layout")
+	fmt.Println("  init    create layout and optionally bootstrap canonical specs from project context")
 	fmt.Println("  ingest  ingest a source file with AI metadata and conflict checks")
 	fmt.Println("  import  alias for ingest")
 	fmt.Println("  raw     synthesize a spec from freeform text or voice note content")
@@ -773,6 +829,18 @@ func printUsage() {
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  status  show repository summary")
+	fmt.Println()
+	fmt.Println("init options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --ai <mode>            AI mode: off, auto (default: \"auto\")")
+	fmt.Println("  --ai-provider <name>   AI provider: codex, claude (default: from .canonconfig)")
+	fmt.Println("  --response-file <path> precomputed AI response JSON")
+	fmt.Println("  --no-interactive       accept all generated specs without review")
+	fmt.Println("  --accept-all           alias for --no-interactive")
+	fmt.Println("  --max-specs <n>        maximum specs to generate (default: 10)")
+	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
+	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
+	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
 }
 
 func parseCSV(value string) []string {
@@ -787,6 +855,39 @@ func parseCSV(value string) []string {
 			out = append(out, v)
 		}
 	}
+	return out
+}
+
+type stringSliceFlag struct {
+	values []string
+}
+
+func (f *stringSliceFlag) String() string {
+	if len(f.values) == 0 {
+		return ""
+	}
+	return strings.Join(f.values, ",")
+}
+
+func (f *stringSliceFlag) Set(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Split(trimmed, ",")
+	for _, part := range parts {
+		v := strings.TrimSpace(part)
+		if v == "" {
+			continue
+		}
+		f.values = append(f.values, v)
+	}
+	return nil
+}
+
+func (f *stringSliceFlag) Values() []string {
+	out := make([]string, len(f.values))
+	copy(out, f.values)
 	return out
 }
 
