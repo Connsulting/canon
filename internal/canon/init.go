@@ -84,6 +84,8 @@ type initScanReport struct {
 	FoundFiles      int
 	IncludedFiles   int
 	ExcludedFiles   int
+	OverflowFiles   int
+	CandidateFiles  int
 	ContextBytes    int
 	ContextLimit    int
 	Context         string
@@ -169,8 +171,12 @@ func Init(root string, options InitOptions) (InitResult, error) {
 		ContextBytes:  scan.ContextBytes,
 	}
 
-	fmt.Fprintf(out, "  Found %d files (%d included in context, %d excluded)\n", scan.FoundFiles, scan.IncludedFiles, scan.ExcludedFiles)
-	fmt.Fprintf(out, "  Context size: %d KB / %d KB limit\n", scan.ContextBytes/1024, contextLimitKB)
+	fmt.Fprintf(out, "  Found %d files (%d candidates, %d excluded)\n", scan.FoundFiles, scan.CandidateFiles, scan.ExcludedFiles)
+	fmt.Fprintf(out, "  Context: %d files included, %d KB / %d KB limit", scan.IncludedFiles, scan.ContextBytes/1024, contextLimitKB)
+	if scan.OverflowFiles > 0 {
+		fmt.Fprintf(out, " (%d files didn't fit)", scan.OverflowFiles)
+	}
+	fmt.Fprintln(out)
 
 	if scan.IncludedFiles == 0 || strings.TrimSpace(scan.Context) == "" {
 		fmt.Fprintln(out, "No project files found. Skipping AI scan.")
@@ -532,15 +538,14 @@ func scanProjectForInit(root string, options initScanOptions) (initScanReport, e
 
 	tree := buildDirectoryTree(allFiles, initTreeDepth)
 	context, included := buildInitContext(tree, candidates, limit)
-	excluded += len(candidates) - included
-	if excluded < 0 {
-		excluded = 0
-	}
+	overflowed := len(candidates) - included
 
 	return initScanReport{
 		FoundFiles:      found,
 		IncludedFiles:   included,
 		ExcludedFiles:   excluded,
+		OverflowFiles:   overflowed,
+		CandidateFiles:  len(candidates),
 		ContextBytes:    len(context),
 		ContextLimit:    limit,
 		Context:         context,
@@ -969,13 +974,12 @@ func runHeadlessAIInit(provider string, root string, scan initScanReport, existi
 		cmd := exec.Command(
 			"claude",
 			"--print",
-			"--output-format",
-			"json",
 			"--json-schema",
 			schema,
-			prompt,
+			"-",
 		)
 		cmd.Dir = root
+		cmd.Stdin = strings.NewReader(prompt)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return aiInitResponse{}, fmt.Errorf("claude --print failed: %w\n%s", err, strings.TrimSpace(string(output)))
