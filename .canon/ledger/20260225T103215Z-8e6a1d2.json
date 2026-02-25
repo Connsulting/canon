@@ -1,0 +1,14 @@
+{
+  "spec_id": "8e6a1d2",
+  "title": "Init Symlink Scan Stability",
+  "type": "technical",
+  "domain": "init",
+  "parents": [
+    "a1e9c10"
+  ],
+  "sequence": 1772015535981622432,
+  "ingested_at": "2026-02-25T10:32:15Z",
+  "content_hash": "a34312f2ed95837a25b6e2b1b305422101e5df540a3d51f0f5d2b79d3a00bf76",
+  "spec_path": ".canon/specs/8e6a1d2.spec.md",
+  "source_path": ".canon/sources/8e6a1d2.source.md"
+}

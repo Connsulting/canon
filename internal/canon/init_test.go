@@ -449,6 +449,59 @@ func TestScanProjectForInitSkipsCacheAndVenvArtifacts(t *testing.T) {
 	}
 }
 
+func TestScanProjectForInitSkipsSymlinkEntries(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatalf("mkdir src failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write src/main.go failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "real-dir"), 0o755); err != nil {
+		t.Fatalf("mkdir real-dir failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "real-dir", "note.txt"), []byte("linked\n"), 0o644); err != nil {
+		t.Fatalf("write real-dir/note.txt failed: %v", err)
+	}
+
+	mustSymlinkOrSkip(t, "real-dir", filepath.Join(root, "linked-dir"))
+	mustSymlinkOrSkip(t, "README.md", filepath.Join(root, "readme-link.md"))
+	mustSymlinkOrSkip(t, "missing-target.txt", filepath.Join(root, "broken-link.md"))
+
+	scan, err := scanProjectForInit(root, initScanOptions{
+		ContextLimitBytes: 100 * 1024,
+		MaxFileBytes:      initDefaultMaxFileBytes,
+	})
+	if err != nil {
+		t.Fatalf("scanProjectForInit failed: %v", err)
+	}
+	if !strings.Contains(scan.Context, "## File: README.md") {
+		t.Fatalf("expected README to be included in context")
+	}
+	if strings.Contains(scan.Context, "## File: linked-dir") {
+		t.Fatalf("expected symlinked directory to be excluded from context")
+	}
+	if strings.Contains(scan.Context, "## File: readme-link.md") {
+		t.Fatalf("expected symlinked file to be excluded from context")
+	}
+	if strings.Contains(scan.Context, "## File: broken-link.md") {
+		t.Fatalf("expected broken symlink to be excluded from context")
+	}
+}
+
+func mustSymlinkOrSkip(t *testing.T, target string, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		if os.IsPermission(err) || strings.Contains(strings.ToLower(err.Error()), "privilege") {
+			t.Skipf("symlinks not supported in this environment: %v", err)
+		}
+		t.Fatalf("create symlink %s -> %s failed: %v", link, target, err)
+	}
+}
+
 func writeInitResponse(t *testing.T, path string, payload map[string]any) {
 	t.Helper()
 	b, err := json.MarshalIndent(payload, "", "  ")

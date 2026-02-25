@@ -452,6 +452,11 @@ func scanProjectForInit(root string, options initScanOptions) (initScanReport, e
 		found++
 		allFiles = append(allFiles, rel)
 
+		if entry.Type()&fs.ModeSymlink != 0 {
+			excluded++
+			return nil
+		}
+
 		forceInclude := matchAnyGlob(rel, options.Include)
 		if !forceInclude {
 			if matchAnyGlob(rel, options.Exclude) {
