@@ -8,16 +8,16 @@ import (
 )
 
 type LogOptions struct {
-	Limit   int
-	Graph   bool
-	OneLine bool
-	All     bool
-	Grep    string
-	Domain  string
-	Type    string
-	Color   string
-	IsTTY   bool
-	Date    string
+	Limit    int
+	Graph    bool
+	OneLine  bool
+	All      bool
+	Grep     string
+	Domain   string
+	Type     string
+	Color    string
+	IsTTY    bool
+	Date     string
 	ShowTags bool
 }
 

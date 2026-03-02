@@ -1,0 +1,14 @@
+{
+  "spec_id": "7c4d2e1",
+  "title": "Lint and Style Compliance Cleanup for Go CLI",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "8e6a1d2"
+  ],
+  "sequence": 1772446098807131538,
+  "ingested_at": "2026-03-02T10:08:18Z",
+  "content_hash": "4f2f4dee6256be4e5a61efe204b17544d3e4a16faf501e3c0ad40e8c9ea89110",
+  "spec_path": ".canon/specs/7c4d2e1.spec.md",
+  "source_path": ".canon/sources/7c4d2e1.source.md"
+}
