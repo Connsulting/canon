@@ -28,3 +28,15 @@ func BlameForCLI(root string, input BlameInput) (BlameResult, error) {
 func CheckForCLI(root string, opts CheckOptions) (CheckResult, error) {
 	return Check(root, opts)
 }
+
+func DependencyRiskForCLI(root string, opts DependencyRiskOptions) (DependencyRiskResult, error) {
+	return DependencyRisk(root, opts)
+}
+
+func ParseDependencyRiskSeverityForCLI(value string) (DependencyRiskSeverity, error) {
+	return parseDependencyRiskSeverity(value)
+}
+
+func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold DependencyRiskSeverity) bool {
+	return dependencyRiskExceedsThreshold(result, threshold)
+}

@@ -1111,6 +1111,86 @@ func TestCheckCommandWriteCreatesConflictReport(t *testing.T) {
 	}
 }
 
+func TestDepsRiskCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	writeCLIGoMod(t, root, `module example.com/cli-pass
+
+go 1.22
+
+require github.com/acme/stable v1.2.3
+`)
+	if err := os.WriteFile(filepath.Join(root, "go.sum"), []byte(""), 0o644); err != nil {
+		t.Fatalf("failed writing go.sum: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"deps-risk", "--root", root, "--json"}); err != nil {
+			t.Fatalf("deps-risk command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		DependencyCount int `json:"dependency_count"`
+		Summary         struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.DependencyCount != 1 {
+		t.Fatalf("expected dependency count 1, got %d", payload.DependencyCount)
+	}
+	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+}
+
+func TestDepsRiskCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	writeCLIGoMod(t, root, `module example.com/cli-threshold
+
+go 1.22
+
+require github.com/acme/risky v0.9.0
+`)
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"deps-risk", "--root", root, "--fail-on", "medium"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected deps-risk to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "dependency risk threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") {
+		t.Fatalf("expected output to include high severity summary, got:\n%s", out)
+	}
+}
+
+func TestDepsRiskCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"deps-risk", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"deps-risk", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for deps-risk positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---
@@ -1151,5 +1231,12 @@ func writeGCResponse(t *testing.T, path string, payload map[string]any) {
 	}
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatalf("failed writing gc response: %v", err)
+	}
+}
+
+func writeCLIGoMod(t *testing.T, root string, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(content), 0o644); err != nil {
+		t.Fatalf("failed writing go.mod fixture: %v", err)
 	}
 }

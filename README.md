@@ -20,6 +20,7 @@ Phase 1 only:
 - `go run ./cmd/canon reset <spec-id>`
 - `go run ./cmd/canon render --write`
 - `go run ./cmd/canon blame "<behavior description>"`
+- `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
 
@@ -63,6 +64,11 @@ Check options:
 - `--json` emit machine-readable JSON
 - `--write` persist conflict reports under `.canon/conflict-reports/`
 
+Dependency risk options:
+- `--root <path>` repository root containing `go.mod` (default: `.`)
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+
 GC options:
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
@@ -78,6 +84,8 @@ go run ./cmd/canon log --graph --oneline --all -n 100
 go run ./cmd/canon log --oneline --domain api --type feature --grep rate
 go run ./cmd/canon log --graph --oneline --all --date relative --color always -n 100
 go run ./cmd/canon blame "graph mode must use semantic dependencies from canonical specs"
+go run ./cmd/canon deps-risk --root .
+go run ./cmd/canon deps-risk --root . --fail-on medium
 ```
 
 ## Interactive Raw Flow

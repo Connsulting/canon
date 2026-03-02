@@ -129,6 +129,58 @@ type CheckResult struct {
 	Conflicts      []CheckConflict `json:"conflicts"`
 	ReportPaths    []string        `json:"report_paths,omitempty"`
 }
+
+type DependencyRiskSeverity string
+
+const (
+	DependencyRiskSeverityNone     DependencyRiskSeverity = "none"
+	DependencyRiskSeverityLow      DependencyRiskSeverity = "low"
+	DependencyRiskSeverityMedium   DependencyRiskSeverity = "medium"
+	DependencyRiskSeverityHigh     DependencyRiskSeverity = "high"
+	DependencyRiskSeverityCritical DependencyRiskSeverity = "critical"
+)
+
+type DependencyRiskOptions struct {
+	FailOn DependencyRiskSeverity
+}
+
+type DependencyRiskFinding struct {
+	RuleID   string                 `json:"rule_id"`
+	Category string                 `json:"category"`
+	Severity DependencyRiskSeverity `json:"severity"`
+	Module   string                 `json:"module,omitempty"`
+	Version  string                 `json:"version,omitempty"`
+	Replace  string                 `json:"replace,omitempty"`
+	Message  string                 `json:"message"`
+}
+
+type DependencyRiskSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type DependencyRiskSummary struct {
+	TotalFindings       int                          `json:"total_findings"`
+	SecurityFindings    int                          `json:"security_findings"`
+	MaintenanceFindings int                          `json:"maintenance_findings"`
+	HighestSeverity     DependencyRiskSeverity       `json:"highest_severity"`
+	FindingsBySeverity  DependencyRiskSeverityCounts `json:"findings_by_severity"`
+}
+
+type DependencyRiskResult struct {
+	Root              string                  `json:"root"`
+	GoModPath         string                  `json:"go_mod_path"`
+	GoSumPath         string                  `json:"go_sum_path"`
+	GoSumPresent      bool                    `json:"go_sum_present"`
+	DependencyCount   int                     `json:"dependency_count"`
+	Findings          []DependencyRiskFinding `json:"findings"`
+	Summary           DependencyRiskSummary   `json:"summary"`
+	FailOn            DependencyRiskSeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                    `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string
