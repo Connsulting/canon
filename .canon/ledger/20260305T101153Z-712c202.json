@@ -1,0 +1,14 @@
+{
+  "spec_id": "712c202",
+  "title": "Documentation Backfiller Draft Spec",
+  "type": "feature",
+  "domain": "general",
+  "parents": [
+    "9ad4f11"
+  ],
+  "sequence": 1772705513587508778,
+  "ingested_at": "2026-03-05T10:11:53Z",
+  "content_hash": "a66cfa89501253e995baee848b4327da0a7a5368867c24999b5975a535b8897a",
+  "spec_path": ".canon/specs/712c202.spec.md",
+  "source_path": ".canon/sources/712c202.source.md"
+}
