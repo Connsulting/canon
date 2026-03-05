@@ -60,6 +60,8 @@ func run(args []string) error {
 		return cmdCheck(args[1:])
 	case "blame":
 		return cmdBlame(args[1:])
+	case "deps-risk":
+		return cmdDepsRisk(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -624,6 +626,107 @@ func cmdStatus(args []string) error {
 	return nil
 }
 
+func cmdDepsRisk(args []string) error {
+	fs := flag.NewFlagSet("deps-risk", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("deps-risk does not accept positional arguments")
+	}
+
+	failOn := canon.DependencyRiskSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParseDependencyRiskSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.DependencyRiskSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.DependencyRiskForCLI(abs, canon.DependencyRiskOptions{
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderDependencyRiskText(result))
+	}
+
+	if failOn != "" && canon.DependencyRiskExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("dependency risk threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
+func renderDependencyRiskText(result canon.DependencyRiskResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "dependency risk scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "go.mod: %s\n", filepath.ToSlash(result.GoModPath))
+	if result.GoSumPresent {
+		fmt.Fprintf(&b, "go.sum: %s (present)\n", filepath.ToSlash(result.GoSumPath))
+	} else {
+		fmt.Fprintf(&b, "go.sum: %s (missing)\n", filepath.ToSlash(result.GoSumPath))
+	}
+	fmt.Fprintf(&b, "dependencies: %d\n", result.DependencyCount)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no dependency risk findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		details := make([]string, 0, 3)
+		if finding.Module != "" {
+			details = append(details, "module="+finding.Module)
+		}
+		if finding.Version != "" {
+			details = append(details, "version="+finding.Version)
+		}
+		if finding.Replace != "" {
+			details = append(details, "replace="+finding.Replace)
+		}
+
+		fmt.Fprintf(&b, "  - [%s] [%s] %s", strings.ToUpper(string(finding.Severity)), finding.Category, finding.RuleID)
+		if len(details) > 0 {
+			fmt.Fprintf(&b, " (%s)", strings.Join(details, ", "))
+		}
+		fmt.Fprintf(&b, ": %s\n", finding.Message)
+	}
+	return b.String()
+}
+
 func cmdIndex(args []string) error {
 	fs := flag.NewFlagSet("index", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -854,6 +957,7 @@ func printUsage() {
 	fmt.Println("  render  render expected state from canonical specs")
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
+	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()

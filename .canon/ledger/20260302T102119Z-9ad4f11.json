@@ -1,0 +1,14 @@
+{
+  "spec_id": "9ad4f11",
+  "title": "Go Dependency Risk Scanner",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "7c4d2e1"
+  ],
+  "sequence": 1772446879977659180,
+  "ingested_at": "2026-03-02T10:21:19Z",
+  "content_hash": "861ee7dad33f74774b90d4f273cb6f31337ba0026d82570ccb696f08231217f5",
+  "spec_path": ".canon/specs/9ad4f11.spec.md",
+  "source_path": ".canon/sources/9ad4f11.source.md"
+}
