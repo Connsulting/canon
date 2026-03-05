@@ -1,0 +1,14 @@
+{
+  "spec_id": "d4a7c91",
+  "title": "README CLI Documentation Backfill and Parity Guard",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "9ad4f11"
+  ],
+  "sequence": 1772705103443345964,
+  "ingested_at": "2026-03-05T10:05:03Z",
+  "content_hash": "8c0cbfc8829cbe48bd6f2c7322a0cca2678cfffe7b8260f2ae385e9095359fe7",
+  "spec_path": ".canon/specs/d4a7c91.spec.md",
+  "source_path": ".canon/sources/d4a7c91.source.md"
+}
