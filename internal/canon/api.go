@@ -40,3 +40,15 @@ func ParseDependencyRiskSeverityForCLI(value string) (DependencyRiskSeverity, er
 func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold DependencyRiskSeverity) bool {
 	return dependencyRiskExceedsThreshold(result, threshold)
 }
+
+func PIIScanForCLI(root string, opts PIIScanOptions) (PIIScanResult, error) {
+	return PIIScan(root, opts)
+}
+
+func ParsePIISeverityForCLI(value string) (PIISeverity, error) {
+	return parsePIISeverity(value)
+}
+
+func PIIScanExceedsThresholdForCLI(result PIIScanResult, threshold PIISeverity) bool {
+	return piiScanExceedsThreshold(result, threshold)
+}

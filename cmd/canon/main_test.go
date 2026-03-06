@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -1191,6 +1192,93 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestPIIScanCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	setupCLIGitRepo(t, root)
+	writeCLIFile(t, root, ".gitignore", ".env*\n*.pem\n*.key\ncredentials.*\nsecrets.*\n*.sql\n*.csv\n*.xlsx\n")
+	writeCLIFile(t, root, ".env", "API_TOKEN=abc123456789\n")
+	gitAddAllCLI(t, root)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"pii-scan", "--root", root, "--json"}); err != nil {
+			t.Fatalf("pii-scan command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		ScannedFiles int `json:"scanned_files"`
+		Findings     []struct {
+			File           string `json:"file"`
+			Line           int    `json:"line"`
+			Category       string `json:"category"`
+			Severity       string `json:"severity"`
+			Detail         string `json:"detail"`
+			Recommendation string `json:"recommendation"`
+		} `json:"findings"`
+		Summary struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.ScannedFiles == 0 {
+		t.Fatalf("expected scanned files > 0")
+	}
+	if payload.Summary.TotalFindings == 0 || payload.Summary.HighestSeverity == "none" {
+		t.Fatalf("expected findings in summary, got %+v", payload.Summary)
+	}
+	if len(payload.Findings) == 0 {
+		t.Fatalf("expected at least one finding")
+	}
+	first := payload.Findings[0]
+	if first.File == "" || first.Line <= 0 || first.Category == "" || first.Severity == "" || first.Detail == "" || first.Recommendation == "" {
+		t.Fatalf("expected required finding fields, got %+v", first)
+	}
+}
+
+func TestPIIScanCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	setupCLIGitRepo(t, root)
+	writeCLIFile(t, root, ".env", "DB_PASSWORD=super-secret-password\n")
+	gitAddAllCLI(t, root)
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"pii-scan", "--root", root, "--fail-on", "high"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected pii-scan to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "pii scan threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: critical") {
+		t.Fatalf("expected output to include critical severity summary, got:\n%s", out)
+	}
+}
+
+func TestPIIScanCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"pii-scan", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPIIScanCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"pii-scan", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for pii-scan positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---
@@ -1238,5 +1326,34 @@ func writeCLIGoMod(t *testing.T, root string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing go.mod fixture: %v", err)
+	}
+}
+
+func setupCLIGitRepo(t *testing.T, root string) {
+	t.Helper()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = root
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, string(output))
+	}
+}
+
+func gitAddAllCLI(t *testing.T, root string) {
+	t.Helper()
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = root
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add failed: %v\n%s", err, string(output))
+	}
+}
+
+func writeCLIFile(t *testing.T, root string, rel string, content string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("failed to create directory for %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed writing fixture %s: %v", rel, err)
 	}
 }

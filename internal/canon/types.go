@@ -181,6 +181,70 @@ type DependencyRiskResult struct {
 	ThresholdExceeded bool                    `json:"threshold_exceeded"`
 }
 
+type PIIFindingCategory string
+
+const (
+	PIIFindingCategoryHardcodedPII       PIIFindingCategory = "hardcoded-pii"
+	PIIFindingCategoryPIIInLogs          PIIFindingCategory = "pii-in-logs"
+	PIIFindingCategoryEnvSecret          PIIFindingCategory = "env-secret"
+	PIIFindingCategoryUnencryptedStorage PIIFindingCategory = "unencrypted-storage"
+	PIIFindingCategoryGitignoreGap       PIIFindingCategory = "gitignore-gap"
+)
+
+type PIISeverity string
+
+const (
+	PIISeverityNone     PIISeverity = "none"
+	PIISeverityLow      PIISeverity = "low"
+	PIISeverityMedium   PIISeverity = "medium"
+	PIISeverityHigh     PIISeverity = "high"
+	PIISeverityCritical PIISeverity = "critical"
+)
+
+type PIIScanOptions struct {
+	FailOn PIISeverity
+}
+
+type PIIFinding struct {
+	File           string             `json:"file"`
+	Line           int                `json:"line"`
+	Category       PIIFindingCategory `json:"category"`
+	Severity       PIISeverity        `json:"severity"`
+	Detail         string             `json:"detail"`
+	Recommendation string             `json:"recommendation"`
+}
+
+type PIICategoryCounts struct {
+	HardcodedPII       int `json:"hardcoded_pii"`
+	PIIInLogs          int `json:"pii_in_logs"`
+	EnvSecret          int `json:"env_secret"`
+	UnencryptedStorage int `json:"unencrypted_storage"`
+	GitignoreGap       int `json:"gitignore_gap"`
+}
+
+type PIISeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type PIIScanSummary struct {
+	TotalFindings      int               `json:"total_findings"`
+	HighestSeverity    PIISeverity       `json:"highest_severity"`
+	FindingsByCategory PIICategoryCounts `json:"findings_by_category"`
+	FindingsBySeverity PIISeverityCounts `json:"findings_by_severity"`
+}
+
+type PIIScanResult struct {
+	Root              string         `json:"root"`
+	ScannedFiles      int            `json:"scanned_files"`
+	Findings          []PIIFinding   `json:"findings"`
+	Summary           PIIScanSummary `json:"summary"`
+	FailOn            PIISeverity    `json:"fail_on,omitempty"`
+	ThresholdExceeded bool           `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

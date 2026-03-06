@@ -62,6 +62,8 @@ func run(args []string) error {
 		return cmdBlame(args[1:])
 	case "deps-risk":
 		return cmdDepsRisk(args[1:])
+	case "pii-scan":
+		return cmdPIIScan(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -675,6 +677,97 @@ func cmdDepsRisk(args []string) error {
 	return nil
 }
 
+func cmdPIIScan(args []string) error {
+	fs := flag.NewFlagSet("pii-scan", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("pii-scan does not accept positional arguments")
+	}
+
+	failOn := canon.PIISeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParsePIISeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.PIISeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.PIIScanForCLI(abs, canon.PIIScanOptions{
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderPIIScanText(result))
+	}
+
+	if failOn != "" && canon.PIIScanExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("pii scan threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+
+	return nil
+}
+
+func renderPIIScanText(result canon.PIIScanResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "pii exposure scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "scanned files: %d\n", result.ScannedFiles)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no potential pii exposure findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		fmt.Fprintf(&b, "  - file: %s\n", finding.File)
+		fmt.Fprintf(&b, "    line: %d\n", finding.Line)
+		fmt.Fprintf(&b, "    category: %s\n", finding.Category)
+		fmt.Fprintf(&b, "    severity: %s\n", finding.Severity)
+		fmt.Fprintf(&b, "    detail: %s\n", finding.Detail)
+		fmt.Fprintf(&b, "    recommendation: %s\n", finding.Recommendation)
+	}
+
+	b.WriteString("totals by category:\n")
+	fmt.Fprintf(&b, "  hardcoded-pii: %d\n", result.Summary.FindingsByCategory.HardcodedPII)
+	fmt.Fprintf(&b, "  pii-in-logs: %d\n", result.Summary.FindingsByCategory.PIIInLogs)
+	fmt.Fprintf(&b, "  env-secret: %d\n", result.Summary.FindingsByCategory.EnvSecret)
+	fmt.Fprintf(&b, "  unencrypted-storage: %d\n", result.Summary.FindingsByCategory.UnencryptedStorage)
+	fmt.Fprintf(&b, "  gitignore-gap: %d\n", result.Summary.FindingsByCategory.GitignoreGap)
+	b.WriteString("totals by severity:\n")
+	fmt.Fprintf(&b, "  low: %d\n", result.Summary.FindingsBySeverity.Low)
+	fmt.Fprintf(&b, "  medium: %d\n", result.Summary.FindingsBySeverity.Medium)
+	fmt.Fprintf(&b, "  high: %d\n", result.Summary.FindingsBySeverity.High)
+	fmt.Fprintf(&b, "  critical: %d\n", result.Summary.FindingsBySeverity.Critical)
+
+	return b.String()
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -958,6 +1051,7 @@ func printUsage() {
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
+	fmt.Println("  pii-scan scan repository text for potential PII exposure and secret hygiene gaps")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
@@ -972,6 +1066,11 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("pii-scan options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --json                 output machine-readable JSON")
+	fmt.Println("  --fail-on <severity>   fail on low|medium|high|critical findings")
 }
 
 func parseCSV(value string) []string {
