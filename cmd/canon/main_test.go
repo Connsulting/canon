@@ -1191,6 +1191,160 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestPrivacyCheckCommandJSONOutputWithResponseFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatalf("failed creating src directory: %v", err)
+	}
+	policyPath := filepath.Join(root, "privacy-policy.md")
+	if err := os.WriteFile(policyPath, []byte("# Privacy Policy\n\nWe encrypt personal data at rest.\n"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "crypto.go"), []byte("package src\n\nfunc Encrypt() {}\n"), 0o644); err != nil {
+		t.Fatalf("failed writing code fixture: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "privacy-response.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model": "fixture-model",
+		"findings": []map[string]any{
+			{
+				"claim_id":          "claim-enc-at-rest",
+				"claim":             "We encrypt personal data at rest.",
+				"status":            "supported",
+				"severity":          "low",
+				"reason":            "Encryption helper exists in source.",
+				"evidence_paths":    []string{"src/crypto.go"},
+				"evidence_snippets": []string{"func Encrypt() {}"},
+			},
+		},
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"privacy-check",
+			"--root", root,
+			"--policy-file", policyPath,
+			"--code-path", "src",
+			"--response-file", responsePath,
+			"--json",
+		}); err != nil {
+			t.Fatalf("privacy-check command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		PolicyFile string `json:"policy_file"`
+		Summary    struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+		Findings []struct {
+			ClaimID string `json:"claim_id"`
+			Status  string `json:"status"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("privacy-check JSON output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if filepath.ToSlash(payload.PolicyFile) != filepath.ToSlash(policyPath) {
+		t.Fatalf("unexpected policy file in output: %s", payload.PolicyFile)
+	}
+	if payload.Summary.TotalFindings != 1 || payload.Summary.HighestSeverity != "low" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+	if len(payload.Findings) != 1 || payload.Findings[0].ClaimID != "claim-enc-at-rest" || payload.Findings[0].Status != "supported" {
+		t.Fatalf("unexpected findings payload: %+v", payload.Findings)
+	}
+}
+
+func TestPrivacyCheckCommandRequiresPolicyFile(t *testing.T) {
+	err := run([]string{"privacy-check", "--response-file", "resp.json"})
+	if err == nil {
+		t.Fatalf("expected missing policy-file error")
+	}
+	if !strings.Contains(err.Error(), "privacy-check requires --policy-file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	root := t.TempDir()
+	policyPath := filepath.Join(root, "policy.md")
+	if err := os.WriteFile(policyPath, []byte("policy"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+
+	err := run([]string{"privacy-check", "--root", root, "--policy-file", policyPath, "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected invalid fail-on severity error")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"privacy-check", "extra"})
+	if err == nil {
+		t.Fatalf("expected positional argument validation error")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandThresholdFailureReturnsError(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatalf("failed creating src directory: %v", err)
+	}
+	policyPath := filepath.Join(root, "privacy-policy.md")
+	if err := os.WriteFile(policyPath, []byte("# Privacy Policy\n\nUsers can always delete account data.\n"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "retention.go"), []byte("package src\n\nfunc RetainForever() {}\n"), 0o644); err != nil {
+		t.Fatalf("failed writing code fixture: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "privacy-response-threshold.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model": "fixture-model",
+		"findings": []map[string]any{
+			{
+				"claim_id":          "claim-delete",
+				"claim":             "Users can always delete account data.",
+				"status":            "contradicted",
+				"severity":          "high",
+				"reason":            "Retention function keeps records indefinitely.",
+				"evidence_paths":    []string{"src/retention.go"},
+				"evidence_snippets": []string{"func RetainForever() {}"},
+			},
+		},
+	})
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{
+			"privacy-check",
+			"--root", root,
+			"--policy-file", policyPath,
+			"--code-path", "src",
+			"--response-file", responsePath,
+			"--fail-on", "medium",
+		})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected privacy-check threshold failure")
+	}
+	if !strings.Contains(commandErr.Error(), "privacy-check threshold failed") {
+		t.Fatalf("unexpected threshold error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") {
+		t.Fatalf("expected text output with highest severity, got:\n%s", out)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---

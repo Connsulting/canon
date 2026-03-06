@@ -7,3 +7,5 @@ state/
 specs/
 !specs/.gitkeep
 !.canon/specs/
+# Nightshift plan artifacts (keep out of version control)
+.nightshift-plan
