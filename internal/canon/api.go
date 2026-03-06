@@ -64,3 +64,15 @@ func ParseLoggingAuditSeverityForCLI(value string) (LoggingAuditSeverity, error)
 func LoggingAuditExceedsThresholdForCLI(result LoggingAuditResult, threshold LoggingAuditSeverity) bool {
 	return loggingAuditExceedsThreshold(result, threshold)
 }
+
+func PIIScanForCLI(root string, opts PIIScanOptions) (PIIScanResult, error) {
+	return PIIScan(root, opts)
+}
+
+func ParsePIIScanSeverityForCLI(value string) (PIIScanSeverity, error) {
+	return parsePIIScanSeverity(value)
+}
+
+func PIIScanExceedsThresholdForCLI(result PIIScanResult, threshold PIIScanSeverity) bool {
+	return piiScanExceedsThreshold(result, threshold)
+}

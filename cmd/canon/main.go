@@ -66,6 +66,8 @@ func run(args []string) error {
 		return cmdLoggingAudit(args[1:])
 	case "privacy-check":
 		return cmdPrivacyCheck(args[1:])
+	case "pii-scan":
+		return cmdPIIScan(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -823,6 +825,55 @@ func cmdPrivacyCheck(args []string) error {
 	return nil
 }
 
+func cmdPIIScan(args []string) error {
+	fs := flag.NewFlagSet("pii-scan", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("pii-scan does not accept positional arguments")
+	}
+
+	failOn := canon.PIIScanSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParsePIIScanSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.PIIScanSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.PIIScanForCLI(abs, canon.PIIScanOptions{
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderPIIScanText(result))
+	}
+
+	if failOn != "" && canon.PIIScanExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("pii-scan threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -1005,6 +1056,55 @@ func renderPrivacyCheckText(result canon.PrivacyCheckResult) string {
 		fmt.Fprintf(&b, "    evidence snippets: %s\n", strings.Join(snippets, " | "))
 	}
 
+	return b.String()
+}
+
+func renderPIIScanText(result canon.PIIScanResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "pii exposure scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "scanned files: %d\n", result.ScannedFiles)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	fmt.Fprintf(
+		&b,
+		"category counts: hardcoded-pii=%d pii-in-logs=%d env-secret=%d unencrypted-storage=%d gitignore-gap=%d\n",
+		result.Summary.FindingsByCategory.HardcodedPII,
+		result.Summary.FindingsByCategory.PIIInLogs,
+		result.Summary.FindingsByCategory.EnvSecret,
+		result.Summary.FindingsByCategory.UnencryptedData,
+		result.Summary.FindingsByCategory.GitignoreCoverage,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no pii findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		fmt.Fprintf(
+			&b,
+			"  - [%s] [%s] %s:%d %s\n    recommendation: %s\n",
+			strings.ToUpper(string(finding.Severity)),
+			finding.Category,
+			finding.File,
+			finding.Line,
+			finding.Detail,
+			finding.Recommendation,
+		)
+	}
 	return b.String()
 }
 
@@ -1241,6 +1341,7 @@ func printUsage() {
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  logging-audit audit .canon logging artifacts for completeness and quality")
 	fmt.Println("  privacy-check compare repo code against privacy policy claims")
+	fmt.Println("  pii-scan scan repository text for potential PII and secret exposure")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
@@ -1270,6 +1371,11 @@ func printUsage() {
 	fmt.Println("  --ai <mode>              AI mode: auto, from-response (default: \"auto\")")
 	fmt.Println("  --ai-provider <name>     AI provider: codex, claude (default: from .canonconfig)")
 	fmt.Println("  --response-file <path>   precomputed AI response JSON")
+	fmt.Println("  --json                   output machine-readable JSON")
+	fmt.Println("  --fail-on <severity>     fail on severity threshold: low, medium, high, critical")
+	fmt.Println()
+	fmt.Println("pii-scan options:")
+	fmt.Println("  --root <path>            repository root (default: \".\")")
 	fmt.Println("  --json                   output machine-readable JSON")
 	fmt.Println("  --fail-on <severity>     fail on severity threshold: low, medium, high, critical")
 }

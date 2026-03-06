@@ -1508,6 +1508,96 @@ func TestPrivacyCheckCommandThresholdFailureReturnsError(t *testing.T) {
 	}
 }
 
+func TestPIIScanCommandJSONOutput(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\n"), 0o644); err != nil {
+		t.Fatalf("failed writing .gitignore fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "fixture.json"), []byte(`{"email":"alice@example.com"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("failed writing fixture file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"pii-scan", "--root", root, "--json"}); err != nil {
+			t.Fatalf("pii-scan command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Root     string `json:"root"`
+		Findings []struct {
+			File           string `json:"file"`
+			Line           int    `json:"line"`
+			Category       string `json:"category"`
+			Severity       string `json:"severity"`
+			Detail         string `json:"detail"`
+			Recommendation string `json:"recommendation"`
+		} `json:"findings"`
+		Summary struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("pii-scan JSON output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if filepath.ToSlash(payload.Root) != filepath.ToSlash(root) {
+		t.Fatalf("unexpected root in payload: %s", payload.Root)
+	}
+	if payload.Summary.TotalFindings == 0 {
+		t.Fatalf("expected at least one finding")
+	}
+	for _, finding := range payload.Findings {
+		if strings.TrimSpace(finding.File) == "" || finding.Line <= 0 || strings.TrimSpace(finding.Category) == "" || strings.TrimSpace(finding.Severity) == "" || strings.TrimSpace(finding.Detail) == "" || strings.TrimSpace(finding.Recommendation) == "" {
+			t.Fatalf("expected populated finding fields, got %+v", finding)
+		}
+	}
+}
+
+func TestPIIScanCommandThresholdFailureReturnsError(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".env*\n*.pem\n*.key\ncredentials.*\nsecrets.*\n*.sql\n*.csv\n*.xlsx\n"), 0o644); err != nil {
+		t.Fatalf("failed writing .gitignore fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("PASSWORD=super-secret-value\n"), 0o644); err != nil {
+		t.Fatalf("failed writing env fixture: %v", err)
+	}
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"pii-scan", "--root", root, "--fail-on", "medium"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected pii-scan threshold failure")
+	}
+	if !strings.Contains(commandErr.Error(), "pii-scan threshold failed") {
+		t.Fatalf("unexpected threshold error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") && !strings.Contains(out, "highest severity: critical") {
+		t.Fatalf("expected rendered output to include highest severity, got:\n%s", out)
+	}
+}
+
+func TestPIIScanCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"pii-scan", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected invalid fail-on severity error")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPIIScanCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"pii-scan", "extra"})
+	if err == nil {
+		t.Fatalf("expected positional argument validation error")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---

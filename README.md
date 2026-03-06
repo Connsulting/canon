@@ -23,6 +23,7 @@ Phase 1 only:
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon logging-audit`
 - `go run ./cmd/canon privacy-check --policy-file docs/privacy-policy.md --response-file fixtures/privacy-check-response.json`
+- `go run ./cmd/canon pii-scan --root .`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
 
@@ -89,6 +90,11 @@ Privacy-check options:
 - `--json` emit machine-readable findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
+PII-scan options:
+- `--root <path>` repository root to scan (default: `.`)
+- `--json` emit machine-readable findings and summary
+- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+
 GC options:
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
@@ -110,6 +116,8 @@ go run ./cmd/canon logging-audit --root . --json
 go run ./cmd/canon logging-audit --root . --fail-on high
 go run ./cmd/canon privacy-check --root . --policy-file docs/privacy-policy.md --response-file fixtures/privacy-check-response.json --json
 go run ./cmd/canon privacy-check --root . --policy-file docs/privacy-policy.md --code-path internal --code-path cmd --fail-on high
+go run ./cmd/canon pii-scan --root . --json
+go run ./cmd/canon pii-scan --root . --fail-on high
 ```
 
 ## Interactive Raw Flow
