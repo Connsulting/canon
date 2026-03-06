@@ -318,6 +318,53 @@ type LoggingAuditResult struct {
 	ThresholdExceeded bool                  `json:"threshold_exceeded"`
 }
 
+type SecurityFootgunSeverity string
+
+const (
+	SecurityFootgunSeverityNone     SecurityFootgunSeverity = "none"
+	SecurityFootgunSeverityLow      SecurityFootgunSeverity = "low"
+	SecurityFootgunSeverityMedium   SecurityFootgunSeverity = "medium"
+	SecurityFootgunSeverityHigh     SecurityFootgunSeverity = "high"
+	SecurityFootgunSeverityCritical SecurityFootgunSeverity = "critical"
+)
+
+type SecurityFootgunOptions struct {
+	FailOn SecurityFootgunSeverity
+}
+
+type SecurityFootgunFinding struct {
+	RuleID   string                  `json:"rule_id"`
+	Category string                  `json:"category"`
+	Severity SecurityFootgunSeverity `json:"severity"`
+	File     string                  `json:"file"`
+	Line     int                     `json:"line"`
+	Column   int                     `json:"column"`
+	Snippet  string                  `json:"snippet,omitempty"`
+	Message  string                  `json:"message"`
+}
+
+type SecurityFootgunSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type SecurityFootgunSummary struct {
+	TotalFindings      int                           `json:"total_findings"`
+	HighestSeverity    SecurityFootgunSeverity       `json:"highest_severity"`
+	FindingsBySeverity SecurityFootgunSeverityCounts `json:"findings_by_severity"`
+}
+
+type SecurityFootgunResult struct {
+	Root              string                   `json:"root"`
+	FilesScanned      int                      `json:"files_scanned"`
+	Findings          []SecurityFootgunFinding `json:"findings"`
+	Summary           SecurityFootgunSummary   `json:"summary"`
+	FailOn            SecurityFootgunSeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                     `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

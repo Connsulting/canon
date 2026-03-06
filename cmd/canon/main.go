@@ -64,6 +64,8 @@ func run(args []string) error {
 		return cmdDepsRisk(args[1:])
 	case "logging-audit":
 		return cmdLoggingAudit(args[1:])
+	case "security-footgun":
+		return cmdSecurityFootgun(args[1:])
 	case "privacy-check":
 		return cmdPrivacyCheck(args[1:])
 	case "version", "-v", "--version":
@@ -728,6 +730,55 @@ func cmdLoggingAudit(args []string) error {
 	return nil
 }
 
+func cmdSecurityFootgun(args []string) error {
+	fs := flag.NewFlagSet("security-footgun", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("security-footgun does not accept positional arguments")
+	}
+
+	failOn := canon.SecurityFootgunSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParseSecurityFootgunSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.SecurityFootgunSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.SecurityFootgunForCLI(abs, canon.SecurityFootgunOptions{
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderSecurityFootgunText(result))
+	}
+
+	if failOn != "" && canon.SecurityFootgunExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("security-footgun threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func cmdPrivacyCheck(args []string) error {
 	fs := flag.NewFlagSet("privacy-check", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -925,6 +976,52 @@ func renderLoggingAuditText(result canon.LoggingAuditResult) string {
 			fmt.Fprintf(&b, " (%s)", strings.Join(details, ", "))
 		}
 		fmt.Fprintf(&b, ": %s\n", finding.Message)
+	}
+
+	return b.String()
+}
+
+func renderSecurityFootgunText(result canon.SecurityFootgunResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "security footgun scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "files scanned: %d\n", result.FilesScanned)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no security foot-guns detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		details := []string{
+			fmt.Sprintf("file=%s", finding.File),
+			fmt.Sprintf("line=%d", finding.Line),
+			fmt.Sprintf("column=%d", finding.Column),
+		}
+		if finding.Snippet != "" {
+			details = append(details, "snippet="+finding.Snippet)
+		}
+		fmt.Fprintf(&b, "  - [%s] [%s] %s (%s): %s\n",
+			strings.ToUpper(string(finding.Severity)),
+			finding.Category,
+			finding.RuleID,
+			strings.Join(details, ", "),
+			finding.Message,
+		)
 	}
 
 	return b.String()
@@ -1240,6 +1337,7 @@ func printUsage() {
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  logging-audit audit .canon logging artifacts for completeness and quality")
+	fmt.Println("  security-footgun scan Go source for deterministic security anti-patterns")
 	fmt.Println("  privacy-check compare repo code against privacy policy claims")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
@@ -1257,6 +1355,11 @@ func printUsage() {
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
 	fmt.Println()
 	fmt.Println("logging-audit options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --json                 output machine-readable JSON")
+	fmt.Println("  --fail-on <severity>   fail on severity threshold: low, medium, high, critical")
+	fmt.Println()
+	fmt.Println("security-footgun options:")
 	fmt.Println("  --root <path>          repository root (default: \".\")")
 	fmt.Println("  --json                 output machine-readable JSON")
 	fmt.Println("  --fail-on <severity>   fail on severity threshold: low, medium, high, critical")

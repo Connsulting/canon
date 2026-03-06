@@ -1,0 +1,14 @@
+{
+  "spec_id": "secf001",
+  "title": "Security Foot-Gun Finder",
+  "type": "feature",
+  "domain": "security",
+  "parents": [
+    "b5f9a31"
+  ],
+  "sequence": 1772780145794647082,
+  "ingested_at": "2026-03-06T06:55:45Z",
+  "content_hash": "c187549579fbf85c8181547b2d7645e86441ec95b016372b2379921e4211d5bc",
+  "spec_path": ".canon/specs/secf001.spec.md",
+  "source_path": ".canon/sources/secf001.source.md"
+}

@@ -64,3 +64,15 @@ func ParseLoggingAuditSeverityForCLI(value string) (LoggingAuditSeverity, error)
 func LoggingAuditExceedsThresholdForCLI(result LoggingAuditResult, threshold LoggingAuditSeverity) bool {
 	return loggingAuditExceedsThreshold(result, threshold)
 }
+
+func SecurityFootgunForCLI(root string, opts SecurityFootgunOptions) (SecurityFootgunResult, error) {
+	return SecurityFootgun(root, opts)
+}
+
+func ParseSecurityFootgunSeverityForCLI(value string) (SecurityFootgunSeverity, error) {
+	return parseSecurityFootgunSeverity(value)
+}
+
+func SecurityFootgunExceedsThresholdForCLI(result SecurityFootgunResult, threshold SecurityFootgunSeverity) bool {
+	return securityFootgunExceedsThreshold(result, threshold)
+}

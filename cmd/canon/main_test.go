@@ -1375,6 +1375,79 @@ func TestLoggingAuditCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestSecurityFootgunCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	writeCLIGoFile(t, root, "fixture.go", `package fixture
+
+func run() {}
+`)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"security-footgun", "--root", root, "--json"}); err != nil {
+			t.Fatalf("security-footgun command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		FilesScanned int `json:"files_scanned"`
+		Summary      struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.FilesScanned != 1 {
+		t.Fatalf("expected files_scanned 1, got %d", payload.FilesScanned)
+	}
+	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+}
+
+func TestSecurityFootgunCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	writeCLIGoFile(t, root, "fixture.go", `package fixture
+
+const apiToken = "prodTokenValue123"
+`)
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"security-footgun", "--root", root, "--fail-on", "high"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected security-footgun to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "security-footgun threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: critical") {
+		t.Fatalf("expected output to include critical severity summary, got:\n%s", out)
+	}
+}
+
+func TestSecurityFootgunCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"security-footgun", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSecurityFootgunCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"security-footgun", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for security-footgun positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPrivacyCheckCommandJSONOutputWithResponseFile(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
@@ -1608,5 +1681,16 @@ func writeCLIGoMod(t *testing.T, root string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing go.mod fixture: %v", err)
+	}
+}
+
+func writeCLIGoFile(t *testing.T, root string, rel string, content string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("failed creating fixture directory: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed writing go fixture: %v", err)
 	}
 }
