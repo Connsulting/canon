@@ -40,3 +40,15 @@ func ParseDependencyRiskSeverityForCLI(value string) (DependencyRiskSeverity, er
 func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold DependencyRiskSeverity) bool {
 	return dependencyRiskExceedsThreshold(result, threshold)
 }
+
+func SchemaEvolutionForCLI(root string, opts SchemaEvolutionOptions) (SchemaEvolutionResult, error) {
+	return SchemaEvolution(root, opts)
+}
+
+func ParseSchemaEvolutionSeverityForCLI(value string) (SchemaEvolutionSeverity, error) {
+	return parseSchemaEvolutionSeverity(value)
+}
+
+func SchemaEvolutionExceedsThresholdForCLI(result SchemaEvolutionResult, threshold SchemaEvolutionSeverity) bool {
+	return schemaEvolutionExceedsThreshold(result, threshold)
+}

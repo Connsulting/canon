@@ -1,0 +1,14 @@
+{
+  "spec_id": "4e9a21f",
+  "title": "Schema Evolution Advisor",
+  "type": "technical",
+  "domain": "database",
+  "parents": [
+    "9ad4f11"
+  ],
+  "sequence": 1772782260251223476,
+  "ingested_at": "2026-03-06T07:31:00Z",
+  "content_hash": "747d8329f65a9a7f42d5465afb225f0eb6da187cfdd8d4268be523c60a5bb47c",
+  "spec_path": ".canon/specs/4e9a21f.spec.md",
+  "source_path": ".canon/sources/4e9a21f.source.md"
+}
