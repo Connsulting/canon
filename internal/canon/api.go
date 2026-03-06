@@ -40,3 +40,15 @@ func ParseDependencyRiskSeverityForCLI(value string) (DependencyRiskSeverity, er
 func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold DependencyRiskSeverity) bool {
 	return dependencyRiskExceedsThreshold(result, threshold)
 }
+
+func SecurityFootgunForCLI(root string, opts SecurityFootgunOptions) (SecurityFootgunResult, error) {
+	return SecurityFootgun(root, opts)
+}
+
+func ParseSecurityFootgunSeverityForCLI(value string) (SecurityFootgunSeverity, error) {
+	return parseSecurityFootgunSeverity(value)
+}
+
+func SecurityFootgunExceedsThresholdForCLI(result SecurityFootgunResult, threshold SecurityFootgunSeverity) bool {
+	return securityFootgunExceedsThreshold(result, threshold)
+}

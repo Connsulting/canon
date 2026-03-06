@@ -62,6 +62,8 @@ func run(args []string) error {
 		return cmdBlame(args[1:])
 	case "deps-risk":
 		return cmdDepsRisk(args[1:])
+	case "security-footgun":
+		return cmdSecurityFootgun(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -675,6 +677,55 @@ func cmdDepsRisk(args []string) error {
 	return nil
 }
 
+func cmdSecurityFootgun(args []string) error {
+	fs := flag.NewFlagSet("security-footgun", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("security-footgun does not accept positional arguments")
+	}
+
+	failOn := canon.SecurityFootgunSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParseSecurityFootgunSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.SecurityFootgunSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.SecurityFootgunForCLI(abs, canon.SecurityFootgunOptions{
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderSecurityFootgunText(result))
+	}
+
+	if failOn != "" && canon.SecurityFootgunExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("security-footgun threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -724,6 +775,52 @@ func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 		}
 		fmt.Fprintf(&b, ": %s\n", finding.Message)
 	}
+	return b.String()
+}
+
+func renderSecurityFootgunText(result canon.SecurityFootgunResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "security footgun scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "files scanned: %d\n", result.FilesScanned)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no security foot-guns detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		details := []string{
+			fmt.Sprintf("file=%s", finding.File),
+			fmt.Sprintf("line=%d", finding.Line),
+			fmt.Sprintf("column=%d", finding.Column),
+		}
+		if finding.Snippet != "" {
+			details = append(details, "snippet="+finding.Snippet)
+		}
+		fmt.Fprintf(&b, "  - [%s] [%s] %s (%s): %s\n",
+			strings.ToUpper(string(finding.Severity)),
+			finding.Category,
+			finding.RuleID,
+			strings.Join(details, ", "),
+			finding.Message,
+		)
+	}
+
 	return b.String()
 }
 
@@ -958,6 +1055,7 @@ func printUsage() {
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
+	fmt.Println("  security-footgun scan Go source for deterministic security anti-patterns")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
@@ -972,6 +1070,11 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("security-footgun options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --json                 output machine-readable JSON")
+	fmt.Println("  --fail-on <severity>   fail on severity threshold: low, medium, high, critical")
 }
 
 func parseCSV(value string) []string {

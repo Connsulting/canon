@@ -1,0 +1,14 @@
+{
+  "spec_id": "f6b2c9d",
+  "title": "Security Foot-Gun Finder",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "9ad4f11"
+  ],
+  "sequence": 1772781167730859410,
+  "ingested_at": "2026-03-06T07:12:47Z",
+  "content_hash": "629d8f16fb216c92d17f3aaa0dade15604396937f0f109065b1a450e54e79faa",
+  "spec_path": ".canon/specs/f6b2c9d.spec.md",
+  "source_path": ".canon/sources/f6b2c9d.source.md"
+}
