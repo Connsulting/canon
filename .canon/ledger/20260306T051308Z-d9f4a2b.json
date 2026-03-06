@@ -1,0 +1,14 @@
+{
+  "spec_id": "d9f4a2b",
+  "title": "Privacy Policy Consistency Checker",
+  "type": "technical",
+  "domain": "privacy",
+  "parents": [
+    "9ad4f11"
+  ],
+  "sequence": 1772773988220770436,
+  "ingested_at": "2026-03-06T05:13:08Z",
+  "content_hash": "48bd7e5af8cf1b6e2bfecbb92c09c5b39a6b0823114686251df492220821d004",
+  "spec_path": ".canon/specs/d9f4a2b.spec.md",
+  "source_path": ".canon/sources/d9f4a2b.source.md"
+}
