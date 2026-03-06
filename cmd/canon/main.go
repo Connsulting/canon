@@ -62,6 +62,8 @@ func run(args []string) error {
 		return cmdBlame(args[1:])
 	case "deps-risk":
 		return cmdDepsRisk(args[1:])
+	case "schema-evolution":
+		return cmdSchemaEvolution(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -675,6 +677,55 @@ func cmdDepsRisk(args []string) error {
 	return nil
 }
 
+func cmdSchemaEvolution(args []string) error {
+	fs := flag.NewFlagSet("schema-evolution", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("schema-evolution does not accept positional arguments")
+	}
+
+	failOn := canon.SchemaEvolutionSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParseSchemaEvolutionSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.SchemaEvolutionSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.SchemaEvolutionForCLI(abs, canon.SchemaEvolutionOptions{
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderSchemaEvolutionText(result))
+	}
+
+	if failOn != "" && canon.SchemaEvolutionExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("schema evolution threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -723,6 +774,49 @@ func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 			fmt.Fprintf(&b, " (%s)", strings.Join(details, ", "))
 		}
 		fmt.Fprintf(&b, ": %s\n", finding.Message)
+	}
+	return b.String()
+}
+
+func renderSchemaEvolutionText(result canon.SchemaEvolutionResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "schema evolution scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "migration files: %d\n", result.MigrationFileCount)
+	fmt.Fprintf(&b, "statements scanned: %d\n", result.StatementCount)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no schema evolution risk findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		fmt.Fprintf(
+			&b,
+			"  - [%s] %s (file=%s line=%d): %s\n",
+			strings.ToUpper(string(finding.Severity)),
+			finding.RuleID,
+			finding.File,
+			finding.Line,
+			finding.Message,
+		)
+		if finding.Statement != "" {
+			fmt.Fprintf(&b, "      statement: %s\n", finding.Statement)
+		}
 	}
 	return b.String()
 }
@@ -958,6 +1052,7 @@ func printUsage() {
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
+	fmt.Println("  schema-evolution scan SQL migrations for potentially breaking schema changes")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()

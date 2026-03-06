@@ -1191,6 +1191,74 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestSchemaEvolutionCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	writeCLISchemaMigrationFile(t, root, "db/migrations/001_safe.sql", `CREATE TABLE users (id BIGINT PRIMARY KEY);`)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"schema-evolution", "--root", root, "--json"}); err != nil {
+			t.Fatalf("schema-evolution command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		MigrationFileCount int `json:"migration_file_count"`
+		StatementCount     int `json:"statement_count"`
+		Summary            struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.MigrationFileCount != 1 || payload.StatementCount != 1 {
+		t.Fatalf("unexpected migration counts: %+v", payload)
+	}
+	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+}
+
+func TestSchemaEvolutionCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	writeCLISchemaMigrationFile(t, root, "db/migrations/001_breaking.sql", `DROP TABLE users;`)
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"schema-evolution", "--root", root, "--fail-on", "medium"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected schema-evolution to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "schema evolution threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") {
+		t.Fatalf("expected output to include high severity summary, got:\n%s", out)
+	}
+}
+
+func TestSchemaEvolutionCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"schema-evolution", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSchemaEvolutionCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"schema-evolution", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for schema-evolution positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---
@@ -1238,5 +1306,16 @@ func writeCLIGoMod(t *testing.T, root string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing go.mod fixture: %v", err)
+	}
+}
+
+func writeCLISchemaMigrationFile(t *testing.T, root string, relPath string, content string) {
+	t.Helper()
+	absPath := filepath.Join(root, filepath.FromSlash(relPath))
+	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+		t.Fatalf("failed creating migration directory: %v", err)
+	}
+	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed writing migration fixture: %v", err)
 	}
 }

@@ -21,6 +21,7 @@ Phase 1 only:
 - `go run ./cmd/canon render --write`
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
+- `go run ./cmd/canon schema-evolution`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
 
@@ -69,6 +70,11 @@ Dependency risk options:
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
+Schema evolution options:
+- `--root <path>` repository root containing SQL migration files (default: `.`)
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+
 GC options:
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
@@ -86,6 +92,8 @@ go run ./cmd/canon log --graph --oneline --all --date relative --color always -n
 go run ./cmd/canon blame "graph mode must use semantic dependencies from canonical specs"
 go run ./cmd/canon deps-risk --root .
 go run ./cmd/canon deps-risk --root . --fail-on medium
+go run ./cmd/canon schema-evolution --root .
+go run ./cmd/canon schema-evolution --root . --fail-on medium
 ```
 
 ## Interactive Raw Flow

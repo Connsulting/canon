@@ -181,6 +181,52 @@ type DependencyRiskResult struct {
 	ThresholdExceeded bool                    `json:"threshold_exceeded"`
 }
 
+type SchemaEvolutionSeverity string
+
+const (
+	SchemaEvolutionSeverityNone     SchemaEvolutionSeverity = "none"
+	SchemaEvolutionSeverityLow      SchemaEvolutionSeverity = "low"
+	SchemaEvolutionSeverityMedium   SchemaEvolutionSeverity = "medium"
+	SchemaEvolutionSeverityHigh     SchemaEvolutionSeverity = "high"
+	SchemaEvolutionSeverityCritical SchemaEvolutionSeverity = "critical"
+)
+
+type SchemaEvolutionOptions struct {
+	FailOn SchemaEvolutionSeverity
+}
+
+type SchemaEvolutionFinding struct {
+	RuleID    string                  `json:"rule_id"`
+	Severity  SchemaEvolutionSeverity `json:"severity"`
+	File      string                  `json:"file"`
+	Line      int                     `json:"line"`
+	Statement string                  `json:"statement"`
+	Message   string                  `json:"message"`
+}
+
+type SchemaEvolutionSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type SchemaEvolutionSummary struct {
+	TotalFindings      int                           `json:"total_findings"`
+	HighestSeverity    SchemaEvolutionSeverity       `json:"highest_severity"`
+	FindingsBySeverity SchemaEvolutionSeverityCounts `json:"findings_by_severity"`
+}
+
+type SchemaEvolutionResult struct {
+	Root               string                   `json:"root"`
+	MigrationFileCount int                      `json:"migration_file_count"`
+	StatementCount     int                      `json:"statement_count"`
+	Findings           []SchemaEvolutionFinding `json:"findings"`
+	Summary            SchemaEvolutionSummary   `json:"summary"`
+	FailOn             SchemaEvolutionSeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded  bool                     `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string
