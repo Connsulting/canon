@@ -1294,6 +1294,38 @@ func TestPrivacyCheckCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestPrivacyCheckCommandRequiresResponseFileForFromResponseMode(t *testing.T) {
+	root := t.TempDir()
+	policyPath := filepath.Join(root, "policy.md")
+	if err := os.WriteFile(policyPath, []byte("policy"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+
+	err := run([]string{"privacy-check", "--root", root, "--policy-file", policyPath, "--ai", "from-response"})
+	if err == nil {
+		t.Fatalf("expected from-response response-file validation error")
+	}
+	if !strings.Contains(err.Error(), "requires --response-file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandRejectsUnsupportedAIMode(t *testing.T) {
+	root := t.TempDir()
+	policyPath := filepath.Join(root, "policy.md")
+	if err := os.WriteFile(policyPath, []byte("policy"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+
+	err := run([]string{"privacy-check", "--root", root, "--policy-file", policyPath, "--ai", "off"})
+	if err == nil {
+		t.Fatalf("expected unsupported ai mode error")
+	}
+	if !strings.Contains(err.Error(), "unsupported privacy-check ai mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPrivacyCheckCommandThresholdFailureReturnsError(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {

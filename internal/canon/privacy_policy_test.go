@@ -167,6 +167,14 @@ trailing text
 	if _, err := parseAIPrivacyCheckResponse(root, invalidPath); err == nil || !strings.Contains(err.Error(), "invalid AI privacy-check response JSON") {
 		t.Fatalf("expected invalid JSON parse error, got: %v", err)
 	}
+
+	invalidShapePath := filepath.Join(root, "invalid-shape.json")
+	if err := os.WriteFile(invalidShapePath, []byte(`{"model":"fixture-model"}`), 0o644); err != nil {
+		t.Fatalf("failed writing invalid shape fixture: %v", err)
+	}
+	if _, err := parseAIPrivacyCheckResponse(root, invalidShapePath); err == nil || !strings.Contains(err.Error(), "missing findings") {
+		t.Fatalf("expected missing findings parse error, got: %v", err)
+	}
 }
 
 func TestNormalizePrivacyCheckFindingsDedupAndSortsDeterministically(t *testing.T) {
@@ -238,6 +246,23 @@ func TestNormalizePrivacyCheckFindingsDedupAndSortsDeterministically(t *testing.
 	}
 	if !strings.Contains(strings.ToLower(out[2].Reason), "consistent") {
 		t.Fatalf("expected default supported reason, got %q", out[2].Reason)
+	}
+}
+
+func TestNormalizePrivacyEvidencePathsDropsEscapesAndOutsideAbsolutePaths(t *testing.T) {
+	root := t.TempDir()
+	inside := filepath.Join(root, "src", "inside.go")
+	outside := filepath.Join(filepath.Dir(root), "outside.go")
+
+	paths := normalizePrivacyEvidencePaths([]string{
+		"./src/inside.go",
+		"../outside.go",
+		outside,
+		inside,
+	}, root)
+
+	if len(paths) != 1 || paths[0] != "src/inside.go" {
+		t.Fatalf("expected only in-repo normalized path, got: %+v", paths)
 	}
 }
 

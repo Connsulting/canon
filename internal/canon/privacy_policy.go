@@ -183,7 +183,7 @@ func collectPrivacyCheckCodeContext(root string, codePaths []string, contextLimi
 	found := 0
 	excluded := 0
 
-	processFile := func(rel string, pathAbs string, explicitScopeFile bool, mode fs.FileMode) error {
+	processFile := func(rel string, pathAbs string, ignoreBypass bool, mode fs.FileMode) error {
 		rel = filepath.ToSlash(rel)
 		rel = strings.TrimPrefix(rel, "./")
 		if rel == "" || rel == "." {
@@ -195,13 +195,12 @@ func collectPrivacyCheckCodeContext(root string, codePaths []string, contextLimi
 		seenFiles[rel] = struct{}{}
 
 		found++
-		allFiles = append(allFiles, rel)
 
 		if mode&fs.ModeSymlink != 0 {
 			excluded++
 			return nil
 		}
-		if !explicitScopeFile && matchesIgnorePatterns(rel, false, ignorePatterns) {
+		if !ignoreBypass && matchesIgnorePatterns(rel, false, ignorePatterns) {
 			excluded++
 			return nil
 		}
@@ -247,6 +246,7 @@ func collectPrivacyCheckCodeContext(root string, codePaths []string, contextLimi
 			Content:   content,
 			Truncated: truncated,
 		})
+		allFiles = append(allFiles, rel)
 		return nil
 	}
 
@@ -393,7 +393,7 @@ func privacyCheckScopeRequiresDir(rel string, scopes []string) bool {
 		if scope == "." {
 			continue
 		}
-		if scope == dir || strings.HasPrefix(scope, dir+"/") {
+		if scope == dir || strings.HasPrefix(scope, dir+"/") || strings.HasPrefix(dir, scope+"/") {
 			return true
 		}
 	}
@@ -656,6 +656,9 @@ func parseAIPrivacyCheckResponse(root string, responseFile string) (aiPrivacyChe
 func decodeAIPrivacyCheckResponse(b []byte) (aiPrivacyCheckResponse, error) {
 	var response aiPrivacyCheckResponse
 	if err := json.Unmarshal(b, &response); err == nil {
+		if err := validateAIPrivacyCheckResponse(response); err != nil {
+			return aiPrivacyCheckResponse{}, err
+		}
 		return response, nil
 	}
 	text := strings.TrimSpace(string(b))
@@ -668,7 +671,20 @@ func decodeAIPrivacyCheckResponse(b []byte) (aiPrivacyCheckResponse, error) {
 	if err := json.Unmarshal([]byte(fragment), &response); err != nil {
 		return aiPrivacyCheckResponse{}, fmt.Errorf("invalid AI privacy-check response JSON: %w", err)
 	}
+	if err := validateAIPrivacyCheckResponse(response); err != nil {
+		return aiPrivacyCheckResponse{}, err
+	}
 	return response, nil
+}
+
+func validateAIPrivacyCheckResponse(response aiPrivacyCheckResponse) error {
+	if strings.TrimSpace(response.Model) == "" {
+		return fmt.Errorf("invalid AI privacy-check response JSON: missing model")
+	}
+	if response.Findings == nil {
+		return fmt.Errorf("invalid AI privacy-check response JSON: missing findings")
+	}
+	return nil
 }
 
 func normalizePrivacyCheckFindings(in []aiPrivacyCheckFinding, root string) []PrivacyCheckFinding {
@@ -772,16 +788,21 @@ func normalizePrivacyEvidencePaths(paths []string, root string) []string {
 
 		if filepath.IsAbs(value) {
 			rel, err := filepath.Rel(root, value)
-			if err == nil {
-				rel = filepath.ToSlash(rel)
-				if rel != ".." && !strings.HasPrefix(rel, "../") {
-					value = rel
-				}
+			if err != nil {
+				continue
 			}
+			rel = filepath.ToSlash(rel)
+			if rel == ".." || strings.HasPrefix(rel, "../") {
+				continue
+			}
+			value = rel
 		}
 		value = filepath.ToSlash(filepath.Clean(value))
 		value = strings.TrimPrefix(value, "./")
-		if value == "" || value == "." {
+		if value == "" || value == "." || value == ".." || strings.HasPrefix(value, "../") {
+			continue
+		}
+		if filepath.IsAbs(value) {
 			continue
 		}
 		if _, ok := seen[value]; ok {
