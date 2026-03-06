@@ -154,10 +154,99 @@ func TestPIIScanExcludesVendorDirectory(t *testing.T) {
 	}
 }
 
+func TestPIIScanDetectsDockerComposeEnvironmentListSecrets(t *testing.T) {
+	root := t.TempDir()
+	setupGitRepo(t, root)
+	writePIITestFile(t, root, ".gitignore", ".env*\n*.pem\n*.key\ncredentials.*\nsecrets.*\n*.sql\n*.csv\n*.xlsx\n")
+	writePIITestFile(t, root, "docker-compose.yml", `services:
+  app:
+    image: app:latest
+    environment:
+      - DB_PASSWORD=super-secret-password
+      - API_TOKEN=api-token-value
+      - EXTERNAL_TOKEN=${EXTERNAL_TOKEN}
+`)
+	gitAddAll(t, root)
+
+	result, err := PIIScan(root, PIIScanOptions{})
+	if err != nil {
+		t.Fatalf("PIIScan failed: %v", err)
+	}
+
+	if !hasPIIFinding(result.Findings, "docker-compose.yml", PIIFindingCategoryEnvSecret, "DB_PASSWORD") {
+		t.Fatalf("expected env-secret finding for docker-compose list DB_PASSWORD")
+	}
+	if !hasPIIFinding(result.Findings, "docker-compose.yml", PIIFindingCategoryEnvSecret, "API_TOKEN") {
+		t.Fatalf("expected env-secret finding for docker-compose list API_TOKEN")
+	}
+}
+
+func TestPIIScanDetectsMultilineLogInterpolation(t *testing.T) {
+	root := t.TempDir()
+	setupGitRepo(t, root)
+	writePIITestFile(t, root, ".gitignore", ".env*\n*.pem\n*.key\ncredentials.*\nsecrets.*\n*.sql\n*.csv\n*.xlsx\n")
+	writePIITestFile(t, root, "internal/audit.go", `package internal
+
+import "log"
+
+func audit(userEmail string) {
+	log.Printf(
+		"failed login email=%s",
+		userEmail,
+	)
+}
+`)
+	gitAddAll(t, root)
+
+	result, err := PIIScan(root, PIIScanOptions{})
+	if err != nil {
+		t.Fatalf("PIIScan failed: %v", err)
+	}
+
+	if !hasPIIFinding(result.Findings, "internal/audit.go", PIIFindingCategoryPIIInLogs, `"email"`) {
+		t.Fatalf("expected pii-in-logs finding for multiline log interpolation")
+	}
+}
+
+func TestPIIScanDetectsStructuredNamesInCSVAndSQL(t *testing.T) {
+	root := t.TempDir()
+	setupGitRepo(t, root)
+	writePIITestFile(t, root, ".gitignore", ".env*\n*.pem\n*.key\ncredentials.*\nsecrets.*\n*.sql\n*.csv\n*.xlsx\n")
+	writePIITestFile(t, root, "fixtures/users.csv", `user_id,first_name,last_name,email
+1,Jane,Doe,jane.doe@corp.co
+`)
+	writePIITestFile(t, root, "db/seeds.sql", `INSERT INTO users (first_name, last_name, email) VALUES ('Alice', 'Smith', 'alice.smith@corp.co');`)
+	gitAddAll(t, root)
+
+	result, err := PIIScan(root, PIIScanOptions{})
+	if err != nil {
+		t.Fatalf("PIIScan failed: %v", err)
+	}
+
+	if !hasPIIFinding(result.Findings, "fixtures/users.csv", PIIFindingCategoryHardcodedPII, "first/last name literals") {
+		t.Fatalf("expected hardcoded-pii structured name finding for CSV rows")
+	}
+	if !hasPIIFinding(result.Findings, "db/seeds.sql", PIIFindingCategoryHardcodedPII, "first/last name literals") {
+		t.Fatalf("expected hardcoded-pii structured name finding for SQL rows")
+	}
+}
+
 func TestParsePIISeverityRejectsUnsupported(t *testing.T) {
 	if _, err := parsePIISeverity("urgent"); err == nil {
 		t.Fatalf("expected parsePIISeverity to reject unsupported values")
 	}
+}
+
+func hasPIIFinding(findings []PIIFinding, file string, category PIIFindingCategory, detailContains string) bool {
+	for _, finding := range findings {
+		if finding.File != file || finding.Category != category {
+			continue
+		}
+		if detailContains == "" || strings.Contains(finding.Detail, detailContains) {
+			return true
+		}
+	}
+	return false
 }
 
 func setupGitRepo(t *testing.T, root string) {

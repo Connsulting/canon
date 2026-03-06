@@ -5,7 +5,7 @@ specs:
     domain: security
     touches: [canon-cli, security]
     depends_on: [9ad4f11, e1bcd34]
-    depended_on_by: []
+    depended_on_by: [c4f8e21]
   7c4d2e1:
     title: "Lint and Style Compliance Cleanup for Go CLI"
     type: technical
@@ -62,6 +62,13 @@ specs:
     touches: [canon-cli, ingest, ledger, state-render, tools]
     depends_on: [b98ed16, e1bcd34, f3c2d71]
     depended_on_by: [b3f2d9c]
+  c4f8e21:
+    title: "PII Exposure Scanner"
+    type: technical
+    domain: security
+    touches: [security]
+    depends_on: [6bf2a4e]
+    depended_on_by: []
   c9f6a10:
     title: "Canon Reset"
     type: technical
@@ -111,7 +118,7 @@ domains:
   release:
     specs: [a1e9c10]
   security:
-    specs: [6bf2a4e]
+    specs: [6bf2a4e, c4f8e21]
   state-render:
     specs: [b98ed16, c0d3f0f, e1bcd34]
   tools:

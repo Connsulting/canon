@@ -1238,6 +1238,47 @@ func TestPIIScanCommandJSONOutputShape(t *testing.T) {
 	}
 }
 
+func TestPIIScanCommandDetectsDockerComposeEnvironmentListSecrets(t *testing.T) {
+	root := t.TempDir()
+	setupCLIGitRepo(t, root)
+	writeCLIFile(t, root, ".gitignore", ".env*\n*.pem\n*.key\ncredentials.*\nsecrets.*\n*.sql\n*.csv\n*.xlsx\n")
+	writeCLIFile(t, root, "docker-compose.yml", `services:
+  app:
+    environment:
+      - DB_PASSWORD=super-secret-password
+      - API_TOKEN=api-token-value
+`)
+	gitAddAllCLI(t, root)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"pii-scan", "--root", root, "--json"}); err != nil {
+			t.Fatalf("pii-scan command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Findings []struct {
+			File     string `json:"file"`
+			Category string `json:"category"`
+			Detail   string `json:"detail"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+
+	var found bool
+	for _, finding := range payload.Findings {
+		if finding.File == "docker-compose.yml" && finding.Category == "env-secret" && strings.Contains(finding.Detail, "DB_PASSWORD") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected docker-compose env list secret finding, got: %+v", payload.Findings)
+	}
+}
+
 func TestPIIScanCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
 	root := t.TempDir()
 	setupCLIGitRepo(t, root)

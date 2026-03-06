@@ -2,6 +2,7 @@ package canon
 
 import (
 	"bytes"
+	"encoding/csv"
 	"fmt"
 	"io/fs"
 	"os"
@@ -30,6 +31,8 @@ var (
 	)
 	passportLicenseLiteralPattern = regexp.MustCompile(`(?i)(?:"(?:passport|driver[_ -]?license|license[_ -]?number|dl[_ -]?number)"\s*:\s*"[A-Z0-9\-]{6,14}"|(?:passport|driver[_ -]?license|license[_ -]?number|dl[_ -]?number)\s*=\s*[A-Z0-9\-]{6,14})`)
 	structuredNamePattern         = regexp.MustCompile(`(?:"|')?(?:full_name|name|customer_name|user_name)(?:"|')?\s*[:=]\s*(?:"|')([A-Z][a-z]+\s+[A-Z][a-z]+)(?:"|')`)
+	structuredSQLValuePattern     = regexp.MustCompile(`(?:"|')([A-Z][A-Za-z'\-]+\s+[A-Z][A-Za-z'\-]+)(?:"|')`)
+	sqlInsertValuesPattern        = regexp.MustCompile(`(?is)\binsert\s+into\b[^\(]*\(([^)]*)\)\s*values\s*\(([^)]*)\)`)
 
 	logCallPattern         = regexp.MustCompile(`(?i)\b(?:fmt\.(?:Sprintf|Printf|Errorf)|log\.(?:Printf|Println|Print|Fatalf|Panicf)|slog\.(?:Debug|Info|Warn|Error)|zerolog\.|zap\.|logrus\.|errors\.Wrap(?:f)?)\s*\(`)
 	loggerMethodPattern    = regexp.MustCompile(`(?i)\.(?:Debugf|Infof|Warnf|Errorf|WithField|WithFields)\s*\(`)
@@ -223,6 +226,14 @@ func shouldSkipPIIScanDir(rel string) bool {
 
 func detectHardcodedPIIFindings(rel string, lines []string, seen map[string]struct{}, findings *[]PIIFinding) {
 	structured := isStructuredDataFile(rel)
+	ext := strings.ToLower(path.Ext(rel))
+
+	if ext == ".csv" || ext == ".tsv" {
+		detectStructuredNameInDelimitedData(rel, lines, seen, findings)
+	}
+	if ext == ".sql" {
+		detectStructuredNameInSQL(rel, lines, seen, findings)
+	}
 
 	for i, line := range lines {
 		lineNo := i + 1
@@ -354,7 +365,8 @@ func detectPIIInLogFindings(rel string, lines []string, seen map[string]struct{}
 		return
 	}
 
-	for i, line := range lines {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		lineNo := i + 1
 		if line == "" || isPatternDefinitionLine(line) {
 			continue
@@ -362,11 +374,14 @@ func detectPIIInLogFindings(rel string, lines []string, seen map[string]struct{}
 		if !logCallPattern.MatchString(line) && !loggerMethodPattern.MatchString(line) {
 			continue
 		}
-		if hasRedactionIndicator(line) {
+		callBlock, endLine := collectMultilineCall(lines, i)
+		if hasRedactionIndicator(callBlock) {
+			i = endLine
 			continue
 		}
-		keyword, ok := detectPIIKeyword(line)
+		keyword, ok := detectPIIKeyword(callBlock)
 		if !ok {
+			i = endLine
 			continue
 		}
 
@@ -383,6 +398,7 @@ func detectPIIInLogFindings(rel string, lines []string, seen map[string]struct{}
 			Detail:         fmt.Sprintf("Log/error statement may expose %q data without redaction.", keyword),
 			Recommendation: "Redact or hash sensitive fields before logging and prefer stable non-PII identifiers.",
 		})
+		i = endLine
 	}
 }
 
@@ -901,7 +917,17 @@ func isEnvSecretRelevantFile(rel string) bool {
 }
 
 func parseKeyValueLine(line string) (string, string, bool) {
-	matches := genericKeyValuePattern.FindStringSubmatch(line)
+	normalized := strings.TrimSpace(line)
+	if strings.HasPrefix(normalized, "-") {
+		normalized = strings.TrimSpace(strings.TrimPrefix(normalized, "-"))
+	}
+	if len(normalized) >= 2 {
+		if (normalized[0] == '"' && normalized[len(normalized)-1] == '"') || (normalized[0] == '\'' && normalized[len(normalized)-1] == '\'') {
+			normalized = normalized[1 : len(normalized)-1]
+		}
+	}
+
+	matches := genericKeyValuePattern.FindStringSubmatch(normalized)
 	if len(matches) != 3 {
 		return "", "", false
 	}
@@ -974,4 +1000,363 @@ func storageSeverityForKeyword(keyword string) PIISeverity {
 	default:
 		return PIISeverityHigh
 	}
+}
+
+func collectMultilineCall(lines []string, start int) (string, int) {
+	if start < 0 || start >= len(lines) {
+		return "", start
+	}
+
+	var b strings.Builder
+	depth := 0
+	end := start
+	for i := start; i < len(lines); i++ {
+		line := lines[i]
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(line)
+		depth += parenthesisDelta(line)
+		end = i
+		if depth <= 0 && i > start {
+			break
+		}
+		if i == start && depth <= 0 {
+			break
+		}
+	}
+	return b.String(), end
+}
+
+func parenthesisDelta(line string) int {
+	delta := 0
+	for _, r := range line {
+		switch r {
+		case '(':
+			delta++
+		case ')':
+			delta--
+		}
+	}
+	return delta
+}
+
+func detectStructuredNameInDelimitedData(rel string, lines []string, seen map[string]struct{}, findings *[]PIIFinding) {
+	ext := strings.ToLower(path.Ext(rel))
+	delimiter := ','
+	if ext == ".tsv" {
+		delimiter = '\t'
+	}
+	if ext != ".csv" && ext != ".tsv" {
+		return
+	}
+	if len(lines) < 2 {
+		return
+	}
+
+	headers := parseDelimitedRow(lines[0], delimiter)
+	if len(headers) == 0 {
+		return
+	}
+
+	fullNameColumns := make([]int, 0)
+	firstNameColumns := make([]int, 0)
+	lastNameColumns := make([]int, 0)
+	for idx, header := range headers {
+		switch normalizeStructuredFieldName(header) {
+		case "name", "fullname", "customername", "username", "personname", "contactname":
+			fullNameColumns = append(fullNameColumns, idx)
+		case "firstname", "givenname":
+			firstNameColumns = append(firstNameColumns, idx)
+		case "lastname", "surname", "familyname":
+			lastNameColumns = append(lastNameColumns, idx)
+		}
+	}
+
+	if len(fullNameColumns) == 0 && (len(firstNameColumns) == 0 || len(lastNameColumns) == 0) {
+		return
+	}
+
+	for i := 1; i < len(lines); i++ {
+		lineNo := i + 1
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+
+		values := parseDelimitedRow(lines[i], delimiter)
+		if len(values) == 0 {
+			continue
+		}
+
+		matched := false
+		for _, idx := range fullNameColumns {
+			if idx >= len(values) {
+				continue
+			}
+			if looksLikeFullName(values[idx]) {
+				addStructuredNamePIIFinding(rel, lineNo, seen, findings, "Delimited structured data contains a full-person-name-like literal.")
+				matched = true
+				break
+			}
+		}
+		if matched {
+			continue
+		}
+
+		for _, firstIdx := range firstNameColumns {
+			if firstIdx >= len(values) {
+				continue
+			}
+			if !looksLikeNameToken(values[firstIdx]) {
+				continue
+			}
+			for _, lastIdx := range lastNameColumns {
+				if lastIdx >= len(values) {
+					continue
+				}
+				if looksLikeNameToken(values[lastIdx]) {
+					addStructuredNamePIIFinding(rel, lineNo, seen, findings, "Delimited structured data contains first/last name literals.")
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+	}
+}
+
+func detectStructuredNameInSQL(rel string, lines []string, seen map[string]struct{}, findings *[]PIIFinding) {
+	if strings.ToLower(path.Ext(rel)) != ".sql" {
+		return
+	}
+
+	var statement strings.Builder
+	statementStartLine := 0
+	for i, raw := range lines {
+		lineNo := i + 1
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "--") {
+			continue
+		}
+
+		if statement.Len() == 0 {
+			statementStartLine = lineNo
+		} else {
+			statement.WriteByte('\n')
+		}
+		statement.WriteString(line)
+
+		if !strings.Contains(line, ";") {
+			continue
+		}
+
+		evaluateSQLNameStatement(rel, statementStartLine, statement.String(), seen, findings)
+		statement.Reset()
+		statementStartLine = 0
+	}
+
+	if statement.Len() > 0 {
+		evaluateSQLNameStatement(rel, statementStartLine, statement.String(), seen, findings)
+	}
+}
+
+func evaluateSQLNameStatement(rel string, lineNo int, statement string, seen map[string]struct{}, findings *[]PIIFinding) {
+	lower := strings.ToLower(statement)
+	if !strings.Contains(lower, "name") {
+		return
+	}
+	if strings.Contains(lower, "create table") || strings.Contains(lower, "alter table") {
+		return
+	}
+
+	for _, match := range structuredSQLValuePattern.FindAllStringSubmatch(statement, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		if looksLikeFullName(match[1]) {
+			addStructuredNamePIIFinding(rel, lineNo, seen, findings, "SQL statement contains a full-person-name-like literal.")
+			return
+		}
+	}
+
+	insertMatch := sqlInsertValuesPattern.FindStringSubmatch(statement)
+	if len(insertMatch) != 3 {
+		return
+	}
+
+	columns := splitSQLList(insertMatch[1])
+	values := splitSQLList(insertMatch[2])
+	if len(columns) == 0 || len(columns) != len(values) {
+		return
+	}
+
+	firstName := ""
+	lastName := ""
+	for idx, column := range columns {
+		normalized := normalizeStructuredFieldName(column)
+		value := unquoteSQLLiteral(values[idx])
+
+		switch normalized {
+		case "name", "fullname", "customername", "username", "personname", "contactname":
+			if looksLikeFullName(value) {
+				addStructuredNamePIIFinding(rel, lineNo, seen, findings, "SQL statement contains a full-person-name-like literal.")
+				return
+			}
+		case "firstname", "givenname":
+			firstName = value
+		case "lastname", "surname", "familyname":
+			lastName = value
+		}
+	}
+
+	if looksLikeNameToken(firstName) && looksLikeNameToken(lastName) {
+		addStructuredNamePIIFinding(rel, lineNo, seen, findings, "SQL statement contains first/last name literals.")
+	}
+}
+
+func addStructuredNamePIIFinding(rel string, lineNo int, seen map[string]struct{}, findings *[]PIIFinding, detail string) {
+	addPIIFinding(seen, findings, PIIFinding{
+		File:           rel,
+		Line:           lineNo,
+		Category:       PIIFindingCategoryHardcodedPII,
+		Severity:       capFixtureSeverity(rel, PIISeverityMedium),
+		Detail:         detail,
+		Recommendation: "Use obvious placeholder names (for example, Test User) in fixtures.",
+	})
+}
+
+func parseDelimitedRow(line string, delimiter rune) []string {
+	reader := csv.NewReader(strings.NewReader(line))
+	reader.Comma = delimiter
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1
+	record, err := reader.Read()
+	if err != nil {
+		return nil
+	}
+	return record
+}
+
+func normalizeStructuredFieldName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func looksLikeFullName(value string) bool {
+	candidate := trimSurroundingQuotes(value)
+	if candidate == "" {
+		return false
+	}
+	parts := strings.Fields(candidate)
+	if len(parts) < 2 || len(parts) > 3 {
+		return false
+	}
+	for _, part := range parts {
+		if !looksLikeNameToken(part) {
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeNameToken(value string) bool {
+	candidate := trimSurroundingQuotes(value)
+	if candidate == "" {
+		return false
+	}
+	if strings.EqualFold(candidate, "null") || strings.EqualFold(candidate, "none") {
+		return false
+	}
+	if len(candidate) < 2 || len(candidate) > 32 {
+		return false
+	}
+	for i, r := range candidate {
+		switch {
+		case i == 0 && r >= 'A' && r <= 'Z':
+			continue
+		case r >= 'a' && r <= 'z':
+			continue
+		case r >= 'A' && r <= 'Z':
+			continue
+		case r == '\'' || r == '-':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func splitSQLList(value string) []string {
+	parts := make([]string, 0, 4)
+	var current strings.Builder
+	inSingle := false
+	inDouble := false
+
+	for _, r := range value {
+		switch r {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+			current.WriteRune(r)
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+			current.WriteRune(r)
+		case ',':
+			if inSingle || inDouble {
+				current.WriteRune(r)
+				continue
+			}
+			part := strings.TrimSpace(current.String())
+			if part != "" {
+				parts = append(parts, part)
+			}
+			current.Reset()
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	part := strings.TrimSpace(current.String())
+	if part != "" {
+		parts = append(parts, part)
+	}
+	return parts
+}
+
+func unquoteSQLLiteral(value string) string {
+	candidate := strings.TrimSpace(value)
+	if candidate == "" {
+		return ""
+	}
+	if len(candidate) >= 2 {
+		if (candidate[0] == '\'' && candidate[len(candidate)-1] == '\'') || (candidate[0] == '"' && candidate[len(candidate)-1] == '"') {
+			candidate = candidate[1 : len(candidate)-1]
+		}
+	}
+	return strings.ReplaceAll(candidate, "''", "'")
+}
+
+func trimSurroundingQuotes(value string) string {
+	candidate := strings.TrimSpace(value)
+	if candidate == "" {
+		return ""
+	}
+	if len(candidate) >= 2 {
+		if (candidate[0] == '"' && candidate[len(candidate)-1] == '"') || (candidate[0] == '\'' && candidate[len(candidate)-1] == '\'') {
+			candidate = candidate[1 : len(candidate)-1]
+		}
+	}
+	return strings.TrimSpace(candidate)
 }

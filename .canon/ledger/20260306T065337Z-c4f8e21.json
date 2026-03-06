@@ -1,0 +1,14 @@
+{
+  "spec_id": "c4f8e21",
+  "title": "PII Exposure Scanner",
+  "type": "technical",
+  "domain": "security",
+  "parents": [
+    "6bf2a4e"
+  ],
+  "sequence": 1772780017796602390,
+  "ingested_at": "2026-03-06T06:53:37Z",
+  "content_hash": "ed836553cc1d179fb1367043b79ac24a6c791016c6363fd42bbf2c463bf3f7d1",
+  "spec_path": ".canon/specs/c4f8e21.spec.md",
+  "source_path": ".canon/sources/c4f8e21.source.md"
+}
