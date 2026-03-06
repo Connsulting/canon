@@ -1,0 +1,14 @@
+{
+  "spec_id": "0794206",
+  "title": "Test Flakiness Analyzer",
+  "type": "feature",
+  "domain": "quality",
+  "parents": [
+    "9ad4f11"
+  ],
+  "sequence": 1772775982694388906,
+  "ingested_at": "2026-03-06T05:46:22Z",
+  "content_hash": "df1639f0518a0d9be938b6c0c6e6c588937ca87aef579d6f3de9a799d066e8f0",
+  "spec_path": ".canon/specs/0794206.spec.md",
+  "source_path": ".canon/sources/0794206.source.md"
+}

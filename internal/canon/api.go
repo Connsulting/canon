@@ -40,3 +40,23 @@ func ParseDependencyRiskSeverityForCLI(value string) (DependencyRiskSeverity, er
 func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold DependencyRiskSeverity) bool {
 	return dependencyRiskExceedsThreshold(result, threshold)
 }
+
+func TestFlakinessForCLI(root string, opts TestFlakinessOptions) (TestFlakinessResult, error) {
+	return TestFlakiness(root, opts)
+}
+
+func TestFlakinessExceedsThresholdForCLI(result TestFlakinessResult) bool {
+	return testFlakinessExceedsThreshold(result)
+}
+
+func PrivacyCheckForCLI(root string, opts PrivacyCheckOptions) (PrivacyCheckResult, error) {
+	return PrivacyCheck(root, opts)
+}
+
+func ParsePrivacyCheckSeverityForCLI(value string) (PrivacyCheckSeverity, error) {
+	return parsePrivacyCheckSeverity(value)
+}
+
+func PrivacyCheckExceedsThresholdForCLI(result PrivacyCheckResult, threshold PrivacyCheckSeverity) bool {
+	return privacyCheckExceedsThreshold(result, threshold)
+}

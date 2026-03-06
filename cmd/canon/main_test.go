@@ -1191,6 +1191,330 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestTestFlakinessCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	writeCLITestFlakinessFixture(t, root)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"test-flakiness", "--root", root, "--runs", "4", "--json"}); err != nil {
+			t.Fatalf("test-flakiness command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Runs     int      `json:"runs"`
+		Packages []string `json:"packages"`
+		Summary  struct {
+			FlakyTests         int `json:"flaky_tests"`
+			StablePassingTests int `json:"stable_passing_tests"`
+			StableFailingTests int `json:"stable_failing_tests"`
+		} `json:"summary"`
+		Findings []struct {
+			Package      string `json:"package"`
+			Test         string `json:"test"`
+			RunsObserved int    `json:"runs_observed"`
+			Outcomes     struct {
+				Pass int `json:"pass"`
+				Fail int `json:"fail"`
+			} `json:"outcomes"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.Runs != 4 {
+		t.Fatalf("expected runs=4, got %d", payload.Runs)
+	}
+	if len(payload.Packages) != 1 || payload.Packages[0] != "./..." {
+		t.Fatalf("unexpected package scope: %+v", payload.Packages)
+	}
+	if payload.Summary.FlakyTests != 1 {
+		t.Fatalf("expected one flaky test, got %+v", payload.Summary)
+	}
+	if payload.Summary.StablePassingTests != 1 {
+		t.Fatalf("expected one stable passing test, got %+v", payload.Summary)
+	}
+	if payload.Summary.StableFailingTests != 0 {
+		t.Fatalf("expected zero stable failing tests, got %+v", payload.Summary)
+	}
+	if len(payload.Findings) != 1 {
+		t.Fatalf("expected one flaky finding, got %d", len(payload.Findings))
+	}
+	if payload.Findings[0].Package != "example.com/flakyfixture" || payload.Findings[0].Test != "TestAlternating" {
+		t.Fatalf("unexpected finding identity: %+v", payload.Findings[0])
+	}
+	if payload.Findings[0].Outcomes.Pass != 2 || payload.Findings[0].Outcomes.Fail != 2 {
+		t.Fatalf("unexpected flaky outcome counts: %+v", payload.Findings[0].Outcomes)
+	}
+	if payload.Findings[0].RunsObserved != 4 {
+		t.Fatalf("expected runs_observed=4, got %d", payload.Findings[0].RunsObserved)
+	}
+}
+
+func TestTestFlakinessCommandReturnsErrorWhenFailOnFlakyEnabled(t *testing.T) {
+	root := t.TempDir()
+	writeCLITestFlakinessFixture(t, root)
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"test-flakiness", "--root", root, "--runs", "4", "--fail-on-flaky"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected test-flakiness to fail when flaky tests are detected")
+	}
+	if !strings.Contains(commandErr.Error(), "test flakiness threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "flaky tests:") {
+		t.Fatalf("expected text output with flaky findings, got:\n%s", out)
+	}
+}
+
+func TestTestFlakinessCommandRejectsRunsLessThanTwo(t *testing.T) {
+	err := run([]string{"test-flakiness", "--runs", "1"})
+	if err == nil {
+		t.Fatalf("expected error for runs < 2")
+	}
+	if !strings.Contains(err.Error(), "--runs must be at least 2") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTestFlakinessCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"test-flakiness", "extra"})
+	if err == nil {
+		t.Fatalf("expected positional argument validation error")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandJSONOutputWithResponseFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatalf("failed creating src directory: %v", err)
+	}
+	policyPath := filepath.Join(root, "privacy-policy.md")
+	if err := os.WriteFile(policyPath, []byte("# Privacy Policy\n\nWe encrypt personal data at rest.\n"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "crypto.go"), []byte("package src\n\nfunc Encrypt() {}\n"), 0o644); err != nil {
+		t.Fatalf("failed writing code fixture: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "privacy-response.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model": "fixture-model",
+		"findings": []map[string]any{
+			{
+				"claim_id":          "claim-enc-at-rest",
+				"claim":             "We encrypt personal data at rest.",
+				"status":            "supported",
+				"severity":          "low",
+				"reason":            "Encryption helper exists in source.",
+				"evidence_paths":    []string{"src/crypto.go"},
+				"evidence_snippets": []string{"func Encrypt() {}"},
+			},
+		},
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"privacy-check",
+			"--root", root,
+			"--policy-file", policyPath,
+			"--code-path", "src",
+			"--response-file", responsePath,
+			"--json",
+		}); err != nil {
+			t.Fatalf("privacy-check command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		PolicyFile string `json:"policy_file"`
+		Summary    struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+		Findings []struct {
+			ClaimID string `json:"claim_id"`
+			Status  string `json:"status"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("privacy-check JSON output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if filepath.ToSlash(payload.PolicyFile) != filepath.ToSlash(policyPath) {
+		t.Fatalf("unexpected policy file in output: %s", payload.PolicyFile)
+	}
+	if payload.Summary.TotalFindings != 1 || payload.Summary.HighestSeverity != "low" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+	if len(payload.Findings) != 1 || payload.Findings[0].ClaimID != "claim-enc-at-rest" || payload.Findings[0].Status != "supported" {
+		t.Fatalf("unexpected findings payload: %+v", payload.Findings)
+	}
+}
+
+func TestPrivacyCheckCommandRequiresPolicyFile(t *testing.T) {
+	err := run([]string{"privacy-check", "--response-file", "resp.json"})
+	if err == nil {
+		t.Fatalf("expected missing policy-file error")
+	}
+	if !strings.Contains(err.Error(), "privacy-check requires --policy-file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	root := t.TempDir()
+	policyPath := filepath.Join(root, "policy.md")
+	if err := os.WriteFile(policyPath, []byte("policy"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+
+	err := run([]string{"privacy-check", "--root", root, "--policy-file", policyPath, "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected invalid fail-on severity error")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"privacy-check", "extra"})
+	if err == nil {
+		t.Fatalf("expected positional argument validation error")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandRequiresResponseFileForFromResponseMode(t *testing.T) {
+	root := t.TempDir()
+	policyPath := filepath.Join(root, "policy.md")
+	if err := os.WriteFile(policyPath, []byte("policy"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+
+	err := run([]string{"privacy-check", "--root", root, "--policy-file", policyPath, "--ai", "from-response"})
+	if err == nil {
+		t.Fatalf("expected from-response response-file validation error")
+	}
+	if !strings.Contains(err.Error(), "requires --response-file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandRejectsUnsupportedAIMode(t *testing.T) {
+	root := t.TempDir()
+	policyPath := filepath.Join(root, "policy.md")
+	if err := os.WriteFile(policyPath, []byte("policy"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+
+	err := run([]string{"privacy-check", "--root", root, "--policy-file", policyPath, "--ai", "off"})
+	if err == nil {
+		t.Fatalf("expected unsupported ai mode error")
+	}
+	if !strings.Contains(err.Error(), "unsupported privacy-check ai mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandThresholdFailureReturnsError(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatalf("failed creating src directory: %v", err)
+	}
+	policyPath := filepath.Join(root, "privacy-policy.md")
+	if err := os.WriteFile(policyPath, []byte("# Privacy Policy\n\nUsers can always delete account data.\n"), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "retention.go"), []byte("package src\n\nfunc RetainForever() {}\n"), 0o644); err != nil {
+		t.Fatalf("failed writing code fixture: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "privacy-response-threshold.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model": "fixture-model",
+		"findings": []map[string]any{
+			{
+				"claim_id":          "claim-delete",
+				"claim":             "Users can always delete account data.",
+				"status":            "contradicted",
+				"severity":          "high",
+				"reason":            "Retention function keeps records indefinitely.",
+				"evidence_paths":    []string{"src/retention.go"},
+				"evidence_snippets": []string{"func RetainForever() {}"},
+			},
+		},
+	})
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{
+			"privacy-check",
+			"--root", root,
+			"--policy-file", policyPath,
+			"--code-path", "src",
+			"--response-file", responsePath,
+			"--fail-on", "medium",
+		})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected privacy-check threshold failure")
+	}
+	if !strings.Contains(commandErr.Error(), "privacy-check threshold failed") {
+		t.Fatalf("unexpected threshold error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") {
+		t.Fatalf("expected text output with highest severity, got:\n%s", out)
+	}
+}
+
+func TestPrivacyCheckCommandRejectsSymlinkEscapingCodePath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatalf("failed creating src directory: %v", err)
+	}
+	policyPath := filepath.Join(root, "privacy-policy.md")
+	if err := os.WriteFile(policyPath, []byte("We encrypt personal data at rest."), 0o644); err != nil {
+		t.Fatalf("failed writing policy fixture: %v", err)
+	}
+
+	outsideRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outsideRoot, "outside.go"), []byte("package outside\n"), 0o644); err != nil {
+		t.Fatalf("failed writing outside fixture: %v", err)
+	}
+	if err := os.Symlink(outsideRoot, filepath.Join(root, "outside-link")); err != nil {
+		t.Skipf("symlink unsupported on this platform: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "privacy-response.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model":    "fixture-model",
+		"findings": []map[string]any{},
+	})
+
+	err := run([]string{
+		"privacy-check",
+		"--root", root,
+		"--policy-file", policyPath,
+		"--code-path", "outside-link/outside.go",
+		"--response-file", responsePath,
+	})
+	if err == nil {
+		t.Fatalf("expected symlink escape rejection")
+	}
+	if !strings.Contains(err.Error(), "escapes repository root via symlink") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---
@@ -1238,5 +1562,47 @@ func writeCLIGoMod(t *testing.T, root string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing go.mod fixture: %v", err)
+	}
+}
+
+func writeCLITestFlakinessFixture(t *testing.T, root string) {
+	t.Helper()
+	writeCLIGoMod(t, root, `module example.com/flakyfixture
+
+go 1.22
+`)
+
+	testFile := `package flakyfixture
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestAlternating(t *testing.T) {
+	statePath := filepath.Join(".", ".test-flakiness-state")
+	current, err := os.ReadFile(statePath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read state file: %v", err)
+	}
+
+	if string(current) == "fail" {
+		if err := os.WriteFile(statePath, []byte("pass"), 0o644); err != nil {
+			t.Fatalf("write state file: %v", err)
+		}
+		t.Fatalf("intentional alternating failure")
+	}
+
+	if err := os.WriteFile(statePath, []byte("fail"), 0o644); err != nil {
+		t.Fatalf("write state file: %v", err)
+	}
+}
+
+func TestStablePass(t *testing.T) {}
+`
+
+	if err := os.WriteFile(filepath.Join(root, "flaky_test.go"), []byte(testFile), 0o644); err != nil {
+		t.Fatalf("failed writing flaky fixture test file: %v", err)
 	}
 }

@@ -62,6 +62,10 @@ func run(args []string) error {
 		return cmdBlame(args[1:])
 	case "deps-risk":
 		return cmdDepsRisk(args[1:])
+	case "test-flakiness":
+		return cmdTestFlakiness(args[1:])
+	case "privacy-check":
+		return cmdPrivacyCheck(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -626,6 +630,54 @@ func cmdStatus(args []string) error {
 	return nil
 }
 
+func cmdTestFlakiness(args []string) error {
+	fs := flag.NewFlagSet("test-flakiness", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	runs := fs.Int("runs", 4, "number of repeated go test executions (minimum: 2)")
+	var packages stringSliceFlag
+	fs.Var(&packages, "package", "Go package pattern to test (repeatable)")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlaky := fs.Bool("fail-on-flaky", false, "fail command when flaky tests are detected")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("test-flakiness does not accept positional arguments")
+	}
+	if *runs < 2 {
+		return errors.New("--runs must be at least 2")
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.TestFlakinessForCLI(abs, canon.TestFlakinessOptions{
+		Runs:        *runs,
+		Packages:    packages.Values(),
+		FailOnFlaky: *failOnFlaky,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderTestFlakinessText(result))
+	}
+
+	if *failOnFlaky && canon.TestFlakinessExceedsThresholdForCLI(result) {
+		return fmt.Errorf("test flakiness threshold failed: flaky tests=%d", result.Summary.FlakyTests)
+	}
+	return nil
+}
+
 func cmdDepsRisk(args []string) error {
 	fs := flag.NewFlagSet("deps-risk", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -673,6 +725,142 @@ func cmdDepsRisk(args []string) error {
 		return fmt.Errorf("dependency risk threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
 	}
 	return nil
+}
+
+func cmdPrivacyCheck(args []string) error {
+	fs := flag.NewFlagSet("privacy-check", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	policyFile := fs.String("policy-file", "", "path to local privacy policy markdown/text file")
+	var codePaths stringSliceFlag
+	fs.Var(&codePaths, "code-path", "scope scan to one or more paths (repeatable)")
+	contextLimitKB := fs.Int("context-limit", 120, "max code context size in KB")
+	maxFileBytes := fs.Int64("max-file-bytes", 64*1024, "maximum file bytes scanned per file")
+	aiMode := fs.String("ai", "auto", "AI mode: auto, from-response")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "precomputed AI response JSON")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("privacy-check does not accept positional arguments")
+	}
+	if strings.TrimSpace(*policyFile) == "" {
+		return errors.New("privacy-check requires --policy-file")
+	}
+	if *contextLimitKB < 0 {
+		return errors.New("--context-limit must be zero or greater")
+	}
+	if *maxFileBytes < 0 {
+		return errors.New("--max-file-bytes must be zero or greater")
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(*aiMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
+		mode = "from-response"
+	}
+	if mode != "auto" && mode != "from-response" {
+		return fmt.Errorf("unsupported privacy-check ai mode: %s", mode)
+	}
+	if mode == "from-response" && strings.TrimSpace(*responseFile) == "" {
+		return errors.New("privacy-check --ai from-response requires --response-file")
+	}
+
+	failOn := canon.PrivacyCheckSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParsePrivacyCheckSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.PrivacyCheckSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
+		return err
+	}
+	provider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		provider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+
+	result, err := canon.PrivacyCheckForCLI(abs, canon.PrivacyCheckOptions{
+		PolicyFile:        strings.TrimSpace(*policyFile),
+		CodePaths:         codePaths.Values(),
+		ContextLimitBytes: *contextLimitKB * 1024,
+		MaxFileBytes:      *maxFileBytes,
+		AIMode:            mode,
+		AIProvider:        provider,
+		ResponseFile:      strings.TrimSpace(*responseFile),
+		FailOn:            failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderPrivacyCheckText(result))
+	}
+
+	if failOn != "" && canon.PrivacyCheckExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("privacy-check threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
+func renderTestFlakinessText(result canon.TestFlakinessResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "test flakiness analysis: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "runs: %d\n", result.Runs)
+	fmt.Fprintf(&b, "packages: [%s]\n", strings.Join(result.Packages, ", "))
+	fmt.Fprintf(
+		&b,
+		"summary: total=%d flaky=%d stable_pass=%d stable_fail=%d skip_only=%d\n",
+		result.Summary.TotalTests,
+		result.Summary.FlakyTests,
+		result.Summary.StablePassingTests,
+		result.Summary.StableFailingTests,
+		result.Summary.SkipOnlyTests,
+	)
+	if result.FailGate != nil {
+		fmt.Fprintf(&b, "fail-on-flaky: enabled=%t exceeded=%t\n", result.FailGate.Enabled, result.FailGate.Exceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no flaky tests detected\n")
+		return b.String()
+	}
+
+	b.WriteString("flaky tests:\n")
+	for _, finding := range result.Findings {
+		fmt.Fprintf(
+			&b,
+			"  - %s %s pass=%d fail=%d skip=%d observed=%d\n",
+			finding.Package,
+			finding.Test,
+			finding.Outcomes.Pass,
+			finding.Outcomes.Fail,
+			finding.Outcomes.Skip,
+			finding.RunsObserved,
+		)
+	}
+
+	return b.String()
 }
 
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
@@ -724,6 +912,84 @@ func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 		}
 		fmt.Fprintf(&b, ": %s\n", finding.Message)
 	}
+	return b.String()
+}
+
+func renderPrivacyCheckText(result canon.PrivacyCheckResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "privacy policy check: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "policy file: %s\n", filepath.ToSlash(result.PolicyFile))
+	fmt.Fprintf(&b, "code paths: [%s]\n", strings.Join(result.CodePaths, ", "))
+	fmt.Fprintf(
+		&b,
+		"scan summary: found=%d included=%d excluded=%d context_bytes=%d/%d max_file_bytes=%d truncated=%t policy_bytes=%d\n",
+		result.Context.FoundFiles,
+		result.Context.IncludedFiles,
+		result.Context.ExcludedFiles,
+		result.Context.ContextBytes,
+		result.Context.ContextLimit,
+		result.Context.MaxFileBytes,
+		result.Context.TruncatedToFit,
+		result.Context.PolicyBytesUsed,
+	)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(
+		&b,
+		"status counts: supported=%d contradicted=%d unverifiable=%d\n",
+		result.Summary.FindingsByStatus.Supported,
+		result.Summary.FindingsByStatus.Contradicted,
+		result.Summary.FindingsByStatus.Unverifiable,
+	)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no privacy policy findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		details := make([]string, 0, 2)
+		if finding.ClaimID != "" {
+			details = append(details, "claim_id="+finding.ClaimID)
+		}
+		if len(finding.EvidencePaths) > 0 {
+			details = append(details, "evidence_paths="+strings.Join(finding.EvidencePaths, ","))
+		}
+		fmt.Fprintf(
+			&b,
+			"  - [%s] [%s] %s",
+			strings.ToUpper(string(finding.Severity)),
+			strings.ToUpper(string(finding.Status)),
+			finding.Claim,
+		)
+		if len(details) > 0 {
+			fmt.Fprintf(&b, " (%s)", strings.Join(details, "; "))
+		}
+		fmt.Fprintf(&b, "\n    reason: %s\n", finding.Reason)
+
+		if len(finding.EvidenceSnippets) == 0 {
+			continue
+		}
+		snippets := make([]string, 0, len(finding.EvidenceSnippets))
+		for _, snippet := range finding.EvidenceSnippets {
+			snippets = append(snippets, strings.ReplaceAll(snippet, "\n", " "))
+		}
+		fmt.Fprintf(&b, "    evidence snippets: %s\n", strings.Join(snippets, " | "))
+	}
+
 	return b.String()
 }
 
@@ -957,7 +1223,9 @@ func printUsage() {
 	fmt.Println("  render  render expected state from canonical specs")
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
+	fmt.Println("  test-flakiness detect flaky Go tests by repeating go test runs")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
+	fmt.Println("  privacy-check compare repo code against privacy policy claims")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
@@ -972,6 +1240,25 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("test-flakiness options:")
+	fmt.Println("  --root <path>          repository root containing Go tests (default: \".\")")
+	fmt.Println("  --runs <n>             repeated go test runs (minimum: 2, default: 4)")
+	fmt.Println("  --package <pattern>    Go package pattern (repeatable, default: ./...)")
+	fmt.Println("  --json                 output machine-readable JSON")
+	fmt.Println("  --fail-on-flaky        fail command when flaky tests are detected")
+	fmt.Println()
+	fmt.Println("privacy-check options:")
+	fmt.Println("  --root <path>            repository root (default: \".\")")
+	fmt.Println("  --policy-file <path>     required local privacy policy file")
+	fmt.Println("  --code-path <path>       scope scan to path (repeatable)")
+	fmt.Println("  --context-limit <kb>     max code context size in KB (default: 120)")
+	fmt.Println("  --max-file-bytes <n>     max bytes read per file (default: 65536)")
+	fmt.Println("  --ai <mode>              AI mode: auto, from-response (default: \"auto\")")
+	fmt.Println("  --ai-provider <name>     AI provider: codex, claude (default: from .canonconfig)")
+	fmt.Println("  --response-file <path>   precomputed AI response JSON")
+	fmt.Println("  --json                   output machine-readable JSON")
+	fmt.Println("  --fail-on <severity>     fail on severity threshold: low, medium, high, critical")
 }
 
 func parseCSV(value string) []string {

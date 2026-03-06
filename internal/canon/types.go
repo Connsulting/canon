@@ -181,6 +181,131 @@ type DependencyRiskResult struct {
 	ThresholdExceeded bool                    `json:"threshold_exceeded"`
 }
 
+type TestFlakinessOptions struct {
+	Runs        int
+	Packages    []string
+	FailOnFlaky bool
+}
+
+type TestFlakinessOutcomeCounts struct {
+	Pass int `json:"pass"`
+	Fail int `json:"fail"`
+	Skip int `json:"skip"`
+}
+
+type TestFlakinessFinding struct {
+	Package      string                     `json:"package"`
+	Test         string                     `json:"test"`
+	Outcomes     TestFlakinessOutcomeCounts `json:"outcomes"`
+	RunsObserved int                        `json:"runs_observed"`
+}
+
+type TestFlakinessSummary struct {
+	TotalTests         int `json:"total_tests"`
+	FlakyTests         int `json:"flaky_tests"`
+	StablePassingTests int `json:"stable_passing_tests"`
+	StableFailingTests int `json:"stable_failing_tests"`
+	SkipOnlyTests      int `json:"skip_only_tests"`
+}
+
+type TestFlakinessFailGate struct {
+	Enabled  bool `json:"enabled"`
+	Exceeded bool `json:"exceeded"`
+}
+
+type TestFlakinessResult struct {
+	Root     string                 `json:"root"`
+	Runs     int                    `json:"runs"`
+	Packages []string               `json:"packages"`
+	Findings []TestFlakinessFinding `json:"findings"`
+	Summary  TestFlakinessSummary   `json:"summary"`
+	FailGate *TestFlakinessFailGate `json:"fail_gate,omitempty"`
+}
+
+type PrivacyCheckStatus string
+
+const (
+	PrivacyCheckStatusSupported    PrivacyCheckStatus = "supported"
+	PrivacyCheckStatusContradicted PrivacyCheckStatus = "contradicted"
+	PrivacyCheckStatusUnverifiable PrivacyCheckStatus = "unverifiable"
+)
+
+type PrivacyCheckSeverity string
+
+const (
+	PrivacyCheckSeverityNone     PrivacyCheckSeverity = "none"
+	PrivacyCheckSeverityLow      PrivacyCheckSeverity = "low"
+	PrivacyCheckSeverityMedium   PrivacyCheckSeverity = "medium"
+	PrivacyCheckSeverityHigh     PrivacyCheckSeverity = "high"
+	PrivacyCheckSeverityCritical PrivacyCheckSeverity = "critical"
+)
+
+type PrivacyCheckOptions struct {
+	PolicyFile        string
+	CodePaths         []string
+	ContextLimitBytes int
+	MaxFileBytes      int64
+	AIMode            string
+	AIProvider        string
+	ResponseFile      string
+	FailOn            PrivacyCheckSeverity
+}
+
+type PrivacyCheckFinding struct {
+	ClaimID          string               `json:"claim_id,omitempty"`
+	Claim            string               `json:"claim"`
+	Status           PrivacyCheckStatus   `json:"status"`
+	Severity         PrivacyCheckSeverity `json:"severity"`
+	Reason           string               `json:"reason"`
+	EvidencePaths    []string             `json:"evidence_paths,omitempty"`
+	EvidenceSnippets []string             `json:"evidence_snippets,omitempty"`
+}
+
+type PrivacyCheckStatusCounts struct {
+	Supported    int `json:"supported"`
+	Contradicted int `json:"contradicted"`
+	Unverifiable int `json:"unverifiable"`
+}
+
+type PrivacyCheckSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type PrivacyCheckSummary struct {
+	TotalFindings      int                        `json:"total_findings"`
+	SupportedClaims    int                        `json:"supported_claims"`
+	ContradictedClaims int                        `json:"contradicted_claims"`
+	UnverifiableClaims int                        `json:"unverifiable_claims"`
+	HighestSeverity    PrivacyCheckSeverity       `json:"highest_severity"`
+	FindingsByStatus   PrivacyCheckStatusCounts   `json:"findings_by_status"`
+	FindingsBySeverity PrivacyCheckSeverityCounts `json:"findings_by_severity"`
+}
+
+type PrivacyCheckContextSummary struct {
+	FoundFiles      int  `json:"found_files"`
+	IncludedFiles   int  `json:"included_files"`
+	ExcludedFiles   int  `json:"excluded_files"`
+	ContextBytes    int  `json:"context_bytes"`
+	ContextLimit    int  `json:"context_limit"`
+	MaxFileBytes    int  `json:"max_file_bytes"`
+	TruncatedToFit  bool `json:"truncated_to_fit"`
+	PolicyBytesUsed int  `json:"policy_bytes_used"`
+}
+
+type PrivacyCheckResult struct {
+	Root              string                     `json:"root"`
+	PolicyFile        string                     `json:"policy_file"`
+	CodePaths         []string                   `json:"code_paths"`
+	Context           PrivacyCheckContextSummary `json:"context"`
+	Findings          []PrivacyCheckFinding      `json:"findings"`
+	Summary           PrivacyCheckSummary        `json:"summary"`
+	FailOn            PrivacyCheckSeverity       `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                       `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string
