@@ -119,6 +119,69 @@ func TestSchemaEvolutionThresholdBehavior(t *testing.T) {
 	}
 }
 
+func TestSchemaEvolutionIgnoresKeywordsInsideStringLiterals(t *testing.T) {
+	root := t.TempDir()
+	writeSchemaEvolutionMigrationFile(t, root, "db/migrations/001_literals.sql", `ALTER TABLE users ADD COLUMN note TEXT DEFAULT 'drop table users and rename column id';`)
+
+	result, err := SchemaEvolution(root, SchemaEvolutionOptions{})
+	if err != nil {
+		t.Fatalf("SchemaEvolution failed: %v", err)
+	}
+	if len(result.Findings) != 0 {
+		t.Fatalf("expected no findings, got %d: %+v", len(result.Findings), result.Findings)
+	}
+}
+
+func TestSchemaEvolutionIgnoresKeywordsInsideDollarQuotedLiterals(t *testing.T) {
+	root := t.TempDir()
+	writeSchemaEvolutionMigrationFile(t, root, "db/migrations/001_dollar_literals.sql", `ALTER TABLE users ADD COLUMN note TEXT DEFAULT $$drop table users$$;`)
+
+	result, err := SchemaEvolution(root, SchemaEvolutionOptions{})
+	if err != nil {
+		t.Fatalf("SchemaEvolution failed: %v", err)
+	}
+	if len(result.Findings) != 0 {
+		t.Fatalf("expected no findings, got %d: %+v", len(result.Findings), result.Findings)
+	}
+}
+
+func TestSchemaEvolutionDetectsAddNotNullWithoutDefaultWhenOtherClauseHasDefault(t *testing.T) {
+	root := t.TempDir()
+	writeSchemaEvolutionMigrationFile(t, root, "db/migrations/001_multi_add.sql", `ALTER TABLE users ADD COLUMN email TEXT NOT NULL, ADD COLUMN status TEXT DEFAULT 'active';`)
+
+	result, err := SchemaEvolution(root, SchemaEvolutionOptions{})
+	if err != nil {
+		t.Fatalf("SchemaEvolution failed: %v", err)
+	}
+	if len(result.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(result.Findings), result.Findings)
+	}
+	finding := result.Findings[0]
+	if finding.RuleID != schemaEvolutionRuleAddNotNullNoDefault {
+		t.Fatalf("expected add-not-null-no-default finding, got %s", finding.RuleID)
+	}
+	if finding.Severity != SchemaEvolutionSeverityMedium {
+		t.Fatalf("expected medium severity finding, got %s", finding.Severity)
+	}
+}
+
+func TestSchemaEvolutionDetectsAddNotNullWithoutColumnKeyword(t *testing.T) {
+	root := t.TempDir()
+	writeSchemaEvolutionMigrationFile(t, root, "db/migrations/001_add_without_column.sql", `ALTER TABLE users ADD email TEXT NOT NULL;`)
+
+	result, err := SchemaEvolution(root, SchemaEvolutionOptions{})
+	if err != nil {
+		t.Fatalf("SchemaEvolution failed: %v", err)
+	}
+	if len(result.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(result.Findings), result.Findings)
+	}
+	finding := result.Findings[0]
+	if finding.RuleID != schemaEvolutionRuleAddNotNullNoDefault {
+		t.Fatalf("expected add-not-null-no-default finding, got %s", finding.RuleID)
+	}
+}
+
 func TestSchemaEvolutionErrorPaths(t *testing.T) {
 	missingRoot := filepath.Join(t.TempDir(), "missing-root")
 	if _, err := SchemaEvolution(missingRoot, SchemaEvolutionOptions{}); err == nil {

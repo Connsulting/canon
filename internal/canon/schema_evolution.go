@@ -1,6 +1,7 @@
 package canon
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,9 +28,11 @@ var (
 	schemaEvolutionDropColumnPattern      = regexp.MustCompile(`\balter table\b.*\bdrop column\b`)
 	schemaEvolutionRenameColumnPattern    = regexp.MustCompile(`\balter table\b.*\brename column\b`)
 	schemaEvolutionAlterColumnTypePattern = regexp.MustCompile(`\balter table\b.*\balter column\b.*\btype\b`)
-	schemaEvolutionAddNotNullPattern      = regexp.MustCompile(`\balter table\b.*\badd column\b.*\bnot null\b`)
+	schemaEvolutionAddNotNullPattern      = regexp.MustCompile(`\balter table\b.*\badd(?:\s+column)?\b.*\bnot null\b`)
 	schemaEvolutionSetNotNullPattern      = regexp.MustCompile(`\balter table\b.*\balter column\b.*\bset not null\b`)
 	schemaEvolutionDefaultWordPattern     = regexp.MustCompile(`\bdefault\b`)
+	schemaEvolutionAddColumnPattern       = regexp.MustCompile(`\badd(?:\s+column)?\b`)
+	schemaEvolutionNotNullPattern         = regexp.MustCompile(`\bnot null\b`)
 )
 
 type schemaEvolutionStatement struct {
@@ -63,14 +66,15 @@ func SchemaEvolution(root string, opts SchemaEvolutionOptions) (SchemaEvolutionR
 		statementCount += len(statements)
 
 		for _, statement := range statements {
-			normalized := normalizeSchemaEvolutionSQLForMatch(statement.Text)
+			strippedLiterals := stripSchemaEvolutionSQLLiterals(statement.Text)
+			normalized := normalizeSchemaEvolutionSQLForMatch(strippedLiterals)
 			if normalized == "" {
 				continue
 			}
 
 			line := schemaEvolutionLineAt(sanitized, statement.Start)
 			snippet := compactSchemaEvolutionStatement(statement.Text)
-			findings = appendSchemaEvolutionFindings(findings, relPath, line, snippet, normalized)
+			findings = appendSchemaEvolutionFindings(findings, relPath, line, snippet, normalized, strippedLiterals)
 		}
 	}
 
@@ -351,7 +355,7 @@ func appendSchemaEvolutionStatement(sql string, start int, end int, out *[]schem
 	})
 }
 
-func appendSchemaEvolutionFindings(findings []SchemaEvolutionFinding, file string, line int, statement string, normalizedStatement string) []SchemaEvolutionFinding {
+func appendSchemaEvolutionFindings(findings []SchemaEvolutionFinding, file string, line int, statement string, normalizedStatement string, statementWithoutLiterals string) []SchemaEvolutionFinding {
 	if schemaEvolutionDropTablePattern.MatchString(normalizedStatement) {
 		findings = append(findings, SchemaEvolutionFinding{
 			RuleID:    schemaEvolutionRuleDropTable,
@@ -396,7 +400,7 @@ func appendSchemaEvolutionFindings(findings []SchemaEvolutionFinding, file strin
 		})
 	}
 
-	if schemaEvolutionAddNotNullPattern.MatchString(normalizedStatement) && !schemaEvolutionDefaultWordPattern.MatchString(normalizedStatement) {
+	if schemaEvolutionAddNotNullPattern.MatchString(normalizedStatement) && schemaEvolutionHasAddNotNullNoDefault(statementWithoutLiterals) {
 		findings = append(findings, SchemaEvolutionFinding{
 			RuleID:    schemaEvolutionRuleAddNotNullNoDefault,
 			Severity:  SchemaEvolutionSeverityMedium,
@@ -419,6 +423,69 @@ func appendSchemaEvolutionFindings(findings []SchemaEvolutionFinding, file strin
 	}
 
 	return findings
+}
+
+func schemaEvolutionHasAddNotNullNoDefault(statement string) bool {
+	if strings.TrimSpace(statement) == "" {
+		return false
+	}
+
+	lower := strings.ToLower(statement)
+	clauses := splitSchemaEvolutionTopLevelClauses(lower)
+	for _, clause := range clauses {
+		clauseNormalized := normalizeSchemaEvolutionSQLForMatch(clause)
+		if clauseNormalized == "" {
+			continue
+		}
+
+		addLoc := schemaEvolutionAddColumnPattern.FindStringIndex(clauseNormalized)
+		if addLoc == nil {
+			continue
+		}
+
+		addSegment := strings.TrimSpace(clauseNormalized[addLoc[0]:])
+		if strings.HasPrefix(addSegment, "add constraint ") {
+			continue
+		}
+		if !schemaEvolutionNotNullPattern.MatchString(addSegment) {
+			continue
+		}
+		if schemaEvolutionDefaultWordPattern.MatchString(addSegment) {
+			continue
+		}
+		return true
+	}
+
+	return false
+}
+
+func splitSchemaEvolutionTopLevelClauses(statement string) []string {
+	if strings.TrimSpace(statement) == "" {
+		return nil
+	}
+
+	clauses := make([]string, 0, 4)
+	start := 0
+	depth := 0
+
+	for i := 0; i < len(statement); i++ {
+		switch statement[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				clauses = append(clauses, statement[start:i])
+				start = i + 1
+			}
+		}
+	}
+	clauses = append(clauses, statement[start:])
+
+	return clauses
 }
 
 func sortSchemaEvolutionFindings(findings []SchemaEvolutionFinding) {
@@ -519,6 +586,113 @@ func normalizeSchemaEvolutionSQLForMatch(statement string) string {
 		return ""
 	}
 	return strings.ToLower(strings.Join(strings.Fields(statement), " "))
+}
+
+func stripSchemaEvolutionSQLLiterals(sql string) string {
+	src := []byte(sql)
+	dst := make([]byte, len(src))
+	copy(dst, src)
+
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+
+		switch c {
+		case '\'':
+			i = maskSchemaEvolutionQuotedLiteral(src, dst, i, '\'')
+			continue
+		case '"':
+			i = maskSchemaEvolutionQuotedLiteral(src, dst, i, '"')
+			continue
+		case '`':
+			i = maskSchemaEvolutionQuotedLiteral(src, dst, i, '`')
+			continue
+		case '$':
+			delimiter, end, ok := schemaEvolutionDollarDelimiterAt(src, i)
+			if !ok {
+				continue
+			}
+
+			maskSchemaEvolutionRange(dst, i, end)
+			bodyStart := end + 1
+			closingRelative := bytes.Index(src[bodyStart:], delimiter)
+			if closingRelative < 0 {
+				maskSchemaEvolutionRange(dst, bodyStart, len(dst)-1)
+				i = len(src) - 1
+				continue
+			}
+
+			closingStart := bodyStart + closingRelative
+			closingEnd := closingStart + len(delimiter) - 1
+			maskSchemaEvolutionRange(dst, bodyStart, closingEnd)
+			i = closingEnd
+		}
+	}
+
+	return string(dst)
+}
+
+func maskSchemaEvolutionQuotedLiteral(src []byte, dst []byte, start int, quote byte) int {
+	maskSchemaEvolutionRange(dst, start, start)
+	for i := start + 1; i < len(src); i++ {
+		maskSchemaEvolutionRange(dst, i, i)
+		if src[i] != quote {
+			continue
+		}
+		if i+1 < len(src) && src[i+1] == quote {
+			maskSchemaEvolutionRange(dst, i+1, i+1)
+			i++
+			continue
+		}
+		return i
+	}
+	return len(src) - 1
+}
+
+func schemaEvolutionDollarDelimiterAt(src []byte, index int) ([]byte, int, bool) {
+	if index < 0 || index >= len(src) || src[index] != '$' {
+		return nil, 0, false
+	}
+
+	j := index + 1
+	for j < len(src) && isSchemaEvolutionDollarTagRune(src[j]) {
+		j++
+	}
+	if j >= len(src) || src[j] != '$' {
+		return nil, 0, false
+	}
+
+	if j > index+1 && !isSchemaEvolutionDollarTagStart(src[index+1]) {
+		return nil, 0, false
+	}
+
+	delimiter := make([]byte, j-index+1)
+	copy(delimiter, src[index:j+1])
+	return delimiter, j, true
+}
+
+func maskSchemaEvolutionRange(dst []byte, start int, end int) {
+	if start < 0 {
+		start = 0
+	}
+	if end >= len(dst) {
+		end = len(dst) - 1
+	}
+	for i := start; i <= end; i++ {
+		if dst[i] != '\n' {
+			dst[i] = ' '
+		}
+	}
+}
+
+func isSchemaEvolutionDollarTagStart(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+}
+
+func isSchemaEvolutionDollarTagRune(c byte) bool {
+	if isSchemaEvolutionDollarTagStart(c) {
+		return true
+	}
+	return c >= '0' && c <= '9'
 }
 
 func compactSchemaEvolutionStatement(statement string) string {
