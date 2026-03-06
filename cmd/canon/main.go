@@ -64,6 +64,8 @@ func run(args []string) error {
 		return cmdDepsRisk(args[1:])
 	case "logging-audit":
 		return cmdLoggingAudit(args[1:])
+	case "roadmap-entropy":
+		return cmdRoadmapEntropy(args[1:])
 	case "privacy-check":
 		return cmdPrivacyCheck(args[1:])
 	case "version", "-v", "--version":
@@ -728,6 +730,60 @@ func cmdLoggingAudit(args []string) error {
 	return nil
 }
 
+func cmdRoadmapEntropy(args []string) error {
+	fs := flag.NewFlagSet("roadmap-entropy", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	window := fs.Int("window", 8, "specs per recent/baseline comparison window")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("roadmap-entropy does not accept positional arguments")
+	}
+	if *window <= 0 {
+		return errors.New("--window must be greater than zero")
+	}
+
+	failOn := canon.RoadmapEntropySeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParseRoadmapEntropySeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.RoadmapEntropySeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.RoadmapEntropyForCLI(abs, canon.RoadmapEntropyOptions{
+		Window: *window,
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderRoadmapEntropyText(result))
+	}
+
+	if failOn != "" && canon.RoadmapEntropyExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("roadmap-entropy threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func cmdPrivacyCheck(args []string) error {
 	fs := flag.NewFlagSet("privacy-check", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -918,6 +974,84 @@ func renderLoggingAuditText(result canon.LoggingAuditResult) string {
 		}
 		if finding.SourcePath != "" {
 			details = append(details, "source_path="+finding.SourcePath)
+		}
+
+		fmt.Fprintf(&b, "  - [%s] [%s] %s", strings.ToUpper(string(finding.Severity)), finding.Category, finding.RuleID)
+		if len(details) > 0 {
+			fmt.Fprintf(&b, " (%s)", strings.Join(details, ", "))
+		}
+		fmt.Fprintf(&b, ": %s\n", finding.Message)
+	}
+
+	return b.String()
+}
+
+func renderRoadmapEntropyText(result canon.RoadmapEntropyResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "roadmap entropy: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "window size: %d\n", result.Window)
+	fmt.Fprintf(&b, "ledger entries: %d\n", result.LedgerEntries)
+	fmt.Fprintf(&b, "specs analyzed: %d\n", result.SpecsAnalyzed)
+	fmt.Fprintf(
+		&b,
+		"recent window: specs=%d feature=%d technical=%d resolution=%d non_feature=%d orphan_non_feature=%d domains=%d touched_domains=%d non_feature_ratio=%.4f\n",
+		result.RecentWindow.Specs,
+		result.RecentWindow.FeatureSpecs,
+		result.RecentWindow.TechnicalSpecs,
+		result.RecentWindow.ResolutionSpecs,
+		result.RecentWindow.NonFeatureSpecs,
+		result.RecentWindow.OrphanNonFeatureSpecs,
+		result.RecentWindow.UniqueDomains,
+		result.RecentWindow.UniqueTouchedDomains,
+		result.RecentWindow.NonFeatureRatio,
+	)
+	fmt.Fprintf(
+		&b,
+		"baseline window: specs=%d feature=%d technical=%d resolution=%d non_feature=%d orphan_non_feature=%d domains=%d touched_domains=%d non_feature_ratio=%.4f\n",
+		result.BaselineWindow.Specs,
+		result.BaselineWindow.FeatureSpecs,
+		result.BaselineWindow.TechnicalSpecs,
+		result.BaselineWindow.ResolutionSpecs,
+		result.BaselineWindow.NonFeatureSpecs,
+		result.BaselineWindow.OrphanNonFeatureSpecs,
+		result.BaselineWindow.UniqueDomains,
+		result.BaselineWindow.UniqueTouchedDomains,
+		result.BaselineWindow.NonFeatureRatio,
+	)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	fmt.Fprintf(
+		&b,
+		"category counts: scope_creep=%d drift=%d\n",
+		result.Summary.ScopeCreepFindings,
+		result.Summary.DriftFindings,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no roadmap entropy findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		details := make([]string, 0, 2)
+		if len(finding.Domains) > 0 {
+			details = append(details, "domains="+strings.Join(finding.Domains, ","))
+		}
+		if len(finding.SpecIDs) > 0 {
+			details = append(details, "spec_ids="+strings.Join(finding.SpecIDs, ","))
 		}
 
 		fmt.Fprintf(&b, "  - [%s] [%s] %s", strings.ToUpper(string(finding.Severity)), finding.Category, finding.RuleID)
@@ -1240,6 +1374,7 @@ func printUsage() {
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  logging-audit audit .canon logging artifacts for completeness and quality")
+	fmt.Println("  roadmap-entropy detect potential roadmap scope creep and drift")
 	fmt.Println("  privacy-check compare repo code against privacy policy claims")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
@@ -1258,6 +1393,12 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("logging-audit options:")
 	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --json                 output machine-readable JSON")
+	fmt.Println("  --fail-on <severity>   fail on severity threshold: low, medium, high, critical")
+	fmt.Println()
+	fmt.Println("roadmap-entropy options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --window <n>           specs per recent/baseline window (default: 8)")
 	fmt.Println("  --json                 output machine-readable JSON")
 	fmt.Println("  --fail-on <severity>   fail on severity threshold: low, medium, high, critical")
 	fmt.Println()

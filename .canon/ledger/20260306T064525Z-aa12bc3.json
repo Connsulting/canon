@@ -1,0 +1,12 @@
+{
+  "spec_id": "aa12bc3",
+  "title": "Roadmap Entropy Detector",
+  "type": "technical",
+  "domain": "canon",
+  "parents": null,
+  "sequence": 1772779525392906121,
+  "ingested_at": "2026-03-06T06:45:25Z",
+  "content_hash": "4851e00f8db1dade7c86dfa7368d93df0f68dad468fe73397f92141263cf7a7f",
+  "spec_path": ".canon/specs/aa12bc3.spec.md",
+  "source_path": ".canon/sources/aa12bc3.source.md"
+}

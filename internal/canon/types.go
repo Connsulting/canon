@@ -318,6 +318,70 @@ type LoggingAuditResult struct {
 	ThresholdExceeded bool                  `json:"threshold_exceeded"`
 }
 
+type RoadmapEntropySeverity string
+
+const (
+	RoadmapEntropySeverityNone     RoadmapEntropySeverity = "none"
+	RoadmapEntropySeverityLow      RoadmapEntropySeverity = "low"
+	RoadmapEntropySeverityMedium   RoadmapEntropySeverity = "medium"
+	RoadmapEntropySeverityHigh     RoadmapEntropySeverity = "high"
+	RoadmapEntropySeverityCritical RoadmapEntropySeverity = "critical"
+)
+
+type RoadmapEntropyOptions struct {
+	Window int
+	FailOn RoadmapEntropySeverity
+}
+
+type RoadmapEntropyFinding struct {
+	RuleID   string                 `json:"rule_id"`
+	Category string                 `json:"category"`
+	Severity RoadmapEntropySeverity `json:"severity"`
+	Domains  []string               `json:"domains,omitempty"`
+	SpecIDs  []string               `json:"spec_ids,omitempty"`
+	Message  string                 `json:"message"`
+}
+
+type RoadmapEntropySeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type RoadmapEntropySummary struct {
+	TotalFindings      int                          `json:"total_findings"`
+	ScopeCreepFindings int                          `json:"scope_creep_findings"`
+	DriftFindings      int                          `json:"drift_findings"`
+	HighestSeverity    RoadmapEntropySeverity       `json:"highest_severity"`
+	FindingsBySeverity RoadmapEntropySeverityCounts `json:"findings_by_severity"`
+}
+
+type RoadmapEntropyWindowSummary struct {
+	Specs                 int     `json:"specs"`
+	FeatureSpecs          int     `json:"feature_specs"`
+	TechnicalSpecs        int     `json:"technical_specs"`
+	ResolutionSpecs       int     `json:"resolution_specs"`
+	NonFeatureSpecs       int     `json:"non_feature_specs"`
+	OrphanNonFeatureSpecs int     `json:"orphan_non_feature_specs"`
+	UniqueDomains         int     `json:"unique_domains"`
+	UniqueTouchedDomains  int     `json:"unique_touched_domains"`
+	NonFeatureRatio       float64 `json:"non_feature_ratio"`
+}
+
+type RoadmapEntropyResult struct {
+	Root              string                      `json:"root"`
+	Window            int                         `json:"window"`
+	LedgerEntries     int                         `json:"ledger_entries"`
+	SpecsAnalyzed     int                         `json:"specs_analyzed"`
+	RecentWindow      RoadmapEntropyWindowSummary `json:"recent_window"`
+	BaselineWindow    RoadmapEntropyWindowSummary `json:"baseline_window"`
+	Findings          []RoadmapEntropyFinding     `json:"findings"`
+	Summary           RoadmapEntropySummary       `json:"summary"`
+	FailOn            RoadmapEntropySeverity      `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                        `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

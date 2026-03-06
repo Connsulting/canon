@@ -64,3 +64,15 @@ func ParseLoggingAuditSeverityForCLI(value string) (LoggingAuditSeverity, error)
 func LoggingAuditExceedsThresholdForCLI(result LoggingAuditResult, threshold LoggingAuditSeverity) bool {
 	return loggingAuditExceedsThreshold(result, threshold)
 }
+
+func RoadmapEntropyForCLI(root string, opts RoadmapEntropyOptions) (RoadmapEntropyResult, error) {
+	return RoadmapEntropy(root, opts)
+}
+
+func ParseRoadmapEntropySeverityForCLI(value string) (RoadmapEntropySeverity, error) {
+	return parseRoadmapEntropySeverity(value)
+}
+
+func RoadmapEntropyExceedsThresholdForCLI(result RoadmapEntropyResult, threshold RoadmapEntropySeverity) bool {
+	return roadmapEntropyExceedsThreshold(result, threshold)
+}

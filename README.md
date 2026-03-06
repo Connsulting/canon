@@ -22,6 +22,7 @@ Phase 1 only:
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon logging-audit`
+- `go run ./cmd/canon roadmap-entropy`
 - `go run ./cmd/canon privacy-check --policy-file docs/privacy-policy.md --response-file fixtures/privacy-check-response.json`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
@@ -77,6 +78,13 @@ Logging-audit options:
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 - threshold failures return a non-zero exit code, which is intended for CI gating
 
+Roadmap-entropy options:
+- `--root <path>` repository root containing `.canon/` artifacts (default: `.`)
+- `--window <n>` specs per recent/baseline comparison window (default: `8`)
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+- threshold failures return a non-zero exit code, which is intended for CI gating
+
 Privacy-check options:
 - `--root <path>` repository root to scan (default: `.`)
 - `--policy-file <path>` required local privacy policy document (Markdown or text)
@@ -108,6 +116,8 @@ go run ./cmd/canon deps-risk --root .
 go run ./cmd/canon deps-risk --root . --fail-on medium
 go run ./cmd/canon logging-audit --root . --json
 go run ./cmd/canon logging-audit --root . --fail-on high
+go run ./cmd/canon roadmap-entropy --root . --json
+go run ./cmd/canon roadmap-entropy --root . --window 6 --fail-on high
 go run ./cmd/canon privacy-check --root . --policy-file docs/privacy-policy.md --response-file fixtures/privacy-check-response.json --json
 go run ./cmd/canon privacy-check --root . --policy-file docs/privacy-policy.md --code-path internal --code-path cmd --fail-on high
 ```
