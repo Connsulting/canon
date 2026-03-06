@@ -76,19 +76,19 @@ func LoggingAudit(root string, opts LoggingAuditOptions) (LoggingAuditResult, er
 
 	findings := make([]LoggingAuditFinding, 0)
 
-	specRecords, specByID, specFindings, err := collectLoggingAuditSpecRecords(absRoot)
+	specFileCount, specRecords, specByID, specFindings, err := collectLoggingAuditSpecRecords(absRoot)
 	if err != nil {
 		return LoggingAuditResult{}, err
 	}
 	findings = append(findings, specFindings...)
 
-	sourceRecords, sourceFindings, err := collectLoggingAuditSourceRecords(absRoot)
+	sourceFileCount, sourceRecords, sourceFindings, err := collectLoggingAuditSourceRecords(absRoot)
 	if err != nil {
 		return LoggingAuditResult{}, err
 	}
 	findings = append(findings, sourceFindings...)
 
-	ledgerRecords, ledgerFindings, err := collectLoggingAuditLedgerRecords(absRoot)
+	ledgerEntryCount, ledgerRecords, ledgerFindings, err := collectLoggingAuditLedgerRecords(absRoot)
 	if err != nil {
 		return LoggingAuditResult{}, err
 	}
@@ -454,9 +454,9 @@ func LoggingAudit(root string, opts LoggingAuditOptions) (LoggingAuditResult, er
 		LedgerDir:     ledgerDir,
 		SpecsDir:      specsDir,
 		SourcesDir:    sourcesDir,
-		LedgerEntries: len(ledgerRecords),
-		SpecFiles:     len(specRecords),
-		SourceFiles:   len(sourceRecords),
+		LedgerEntries: ledgerEntryCount,
+		SpecFiles:     specFileCount,
+		SourceFiles:   sourceFileCount,
 		Findings:      findings,
 		Summary:       summary,
 	}
@@ -475,11 +475,11 @@ func LoggingAudit(root string, opts LoggingAuditOptions) (LoggingAuditResult, er
 	return result, nil
 }
 
-func collectLoggingAuditSpecRecords(root string) (map[string]loggingAuditSpecRecord, map[string]loggingAuditSpecRecord, []LoggingAuditFinding, error) {
+func collectLoggingAuditSpecRecords(root string) (int, map[string]loggingAuditSpecRecord, map[string]loggingAuditSpecRecord, []LoggingAuditFinding, error) {
 	glob := filepath.Join(root, ".canon", "specs", "*.spec.md")
 	paths, err := filepath.Glob(glob)
 	if err != nil {
-		return nil, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 	sort.Strings(paths)
 
@@ -530,14 +530,14 @@ func collectLoggingAuditSpecRecords(root string) (map[string]loggingAuditSpecRec
 		records[rel] = record
 	}
 
-	return records, byID, findings, nil
+	return len(paths), records, byID, findings, nil
 }
 
-func collectLoggingAuditSourceRecords(root string) (map[string]loggingAuditSourceRecord, []LoggingAuditFinding, error) {
+func collectLoggingAuditSourceRecords(root string) (int, map[string]loggingAuditSourceRecord, []LoggingAuditFinding, error) {
 	glob := filepath.Join(root, ".canon", "sources", "*.source.md")
 	paths, err := filepath.Glob(glob)
 	if err != nil {
-		return nil, nil, err
+		return 0, nil, nil, err
 	}
 	sort.Strings(paths)
 
@@ -564,14 +564,14 @@ func collectLoggingAuditSourceRecords(root string) (map[string]loggingAuditSourc
 		}
 	}
 
-	return records, findings, nil
+	return len(paths), records, findings, nil
 }
 
-func collectLoggingAuditLedgerRecords(root string) ([]loggingAuditLedgerRecord, []LoggingAuditFinding, error) {
+func collectLoggingAuditLedgerRecords(root string) (int, []loggingAuditLedgerRecord, []LoggingAuditFinding, error) {
 	glob := filepath.Join(root, ".canon", "ledger", "*.json")
 	paths, err := filepath.Glob(glob)
 	if err != nil {
-		return nil, nil, err
+		return 0, nil, nil, err
 	}
 	sort.Strings(paths)
 
@@ -634,7 +634,7 @@ func collectLoggingAuditLedgerRecords(root string) ([]loggingAuditLedgerRecord, 
 		records = append(records, record)
 	}
 
-	return records, findings, nil
+	return len(paths), records, findings, nil
 }
 
 func validateLoggingAuditRequiredLedgerFields(record loggingAuditLedgerRecord) []LoggingAuditFinding {

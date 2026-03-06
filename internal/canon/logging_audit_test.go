@@ -124,6 +124,55 @@ Healthy logging audit fixture.
 	}
 }
 
+func TestLoggingAuditArtifactCountsIncludeInvalidLedgerFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := Ingest(root, IngestInput{
+		ConflictMode: "off",
+		Text: `---
+id: count001
+type: feature
+title: "Count Fixture"
+domain: canon
+created: 2026-03-01T12:00:00Z
+depends_on: []
+touched_domains: [canon]
+---
+Count fixture content.
+`,
+	}); err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	invalidLedgerPath := filepath.Join(root, ".canon", "ledger", "20260301T120001Z-invalid.json")
+	if err := os.WriteFile(invalidLedgerPath, []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("failed writing invalid ledger fixture: %v", err)
+	}
+
+	result, err := LoggingAudit(root, LoggingAuditOptions{})
+	if err != nil {
+		t.Fatalf("LoggingAudit failed: %v", err)
+	}
+
+	if result.LedgerEntries != 2 || result.SpecFiles != 1 || result.SourceFiles != 1 {
+		t.Fatalf("unexpected artifact counts: %+v", result)
+	}
+
+	foundInvalidJSON := false
+	for _, finding := range result.Findings {
+		if finding.RuleID == loggingAuditRuleLedgerInvalidJSON {
+			foundInvalidJSON = true
+			break
+		}
+	}
+	if !foundInvalidJSON {
+		t.Fatalf("expected ledger-invalid-json finding")
+	}
+}
+
 func TestLoggingAuditDetectsBrokenArtifacts(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {

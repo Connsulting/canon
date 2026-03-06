@@ -1239,6 +1239,59 @@ Healthy fixture content.
 	}
 }
 
+func TestLoggingAuditCommandJSONArtifactCountsIncludeInvalidLedgerFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ConflictMode: "off",
+		Text: `---
+id: loga003
+type: feature
+title: "Logging Audit Count Fixture"
+domain: canon
+created: 2026-03-06T00:20:00Z
+depends_on: []
+touched_domains: [canon]
+---
+Fixture content for artifact count test.
+`,
+	}); err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	invalidLedgerPath := filepath.Join(root, ".canon", "ledger", "20260306T002001Z-invalid.json")
+	if err := os.WriteFile(invalidLedgerPath, []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("failed writing invalid ledger fixture: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"logging-audit", "--root", root, "--json"}); err != nil {
+			t.Fatalf("logging-audit command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		LedgerEntries int `json:"ledger_entries"`
+		SpecFiles     int `json:"spec_files"`
+		SourceFiles   int `json:"source_files"`
+		Summary       struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.LedgerEntries != 2 || payload.SpecFiles != 1 || payload.SourceFiles != 1 {
+		t.Fatalf("unexpected artifact counts in payload: %+v", payload)
+	}
+	if payload.Summary.TotalFindings == 0 || payload.Summary.HighestSeverity != "critical" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+}
+
 func TestLoggingAuditCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
