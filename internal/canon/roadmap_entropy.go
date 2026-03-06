@@ -278,6 +278,11 @@ func summarizeRoadmapEntropyWindow(specs []Spec, relationships roadmapEntropyRel
 func analyzeRoadmapEntropyFindings(recent roadmapEntropyWindowMetrics, baseline roadmapEntropyWindowMetrics) []RoadmapEntropyFinding {
 	findings := make([]RoadmapEntropyFinding, 0, 4)
 
+	// Without a baseline segment, drift/scope comparisons are not meaningful.
+	if recent.Summary.Specs == 0 || baseline.Summary.Specs == 0 {
+		return findings
+	}
+
 	newDomains := roadmapEntropySortedSetDifference(recent.DomainSet, baseline.DomainSet)
 	if len(newDomains) > 0 {
 		findings = append(findings, RoadmapEntropyFinding{

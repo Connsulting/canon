@@ -102,6 +102,43 @@ func TestRoadmapEntropyDetectsHeuristicsAndSummarizesDeterministically(t *testin
 	}
 }
 
+func TestRoadmapEntropySkipsFindingsWithoutBaselineWindow(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	ingestRoadmapEntropySpec(t, root, ingestRoadmapEntropyFixture{
+		ID:      "solo001",
+		Type:    "resolution",
+		Title:   "Standalone Resolution",
+		Domain:  "compliance",
+		Created: "2026-03-03T00:00:00Z",
+		Touches: []string{"compliance"},
+	})
+
+	result, err := RoadmapEntropy(root, RoadmapEntropyOptions{
+		Window: 4,
+		FailOn: RoadmapEntropySeverityLow,
+	})
+	if err != nil {
+		t.Fatalf("RoadmapEntropy failed: %v", err)
+	}
+
+	if result.RecentWindow.Specs != 1 || result.BaselineWindow.Specs != 0 {
+		t.Fatalf("unexpected window sizes: recent=%d baseline=%d", result.RecentWindow.Specs, result.BaselineWindow.Specs)
+	}
+	if result.Summary.TotalFindings != 0 {
+		t.Fatalf("expected no findings without baseline window, got %d", result.Summary.TotalFindings)
+	}
+	if result.Summary.HighestSeverity != RoadmapEntropySeverityNone {
+		t.Fatalf("expected highest severity none, got %s", result.Summary.HighestSeverity)
+	}
+	if result.ThresholdExceeded {
+		t.Fatalf("did not expect threshold to be exceeded without baseline window")
+	}
+}
+
 func TestSortRoadmapEntropyFindingsDeterministically(t *testing.T) {
 	findings := []RoadmapEntropyFinding{
 		{RuleID: roadmapEntropyRuleTouchedDomainExpansion, Category: roadmapEntropyCategoryScopeCreep, Severity: RoadmapEntropySeverityLow},

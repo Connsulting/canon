@@ -1419,6 +1419,31 @@ func TestRoadmapEntropyCommandJSONOutputShape(t *testing.T) {
 	}
 }
 
+func TestRoadmapEntropyCommandSkipsThresholdWithoutBaselineWindow(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	ingestRoadmapEntropyCLISpec(t, root, "rsolo001", "resolution", "compliance", "2026-03-03T00:00:00Z", []string{"compliance"}, nil)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"roadmap-entropy", "--root", root, "--window", "4", "--fail-on", "low"}); err != nil {
+			t.Fatalf("roadmap-entropy command should not fail without baseline window: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "baseline window: specs=0") {
+		t.Fatalf("expected output to report empty baseline window, got:\n%s", out)
+	}
+	if !strings.Contains(out, "findings: 0") {
+		t.Fatalf("expected no findings without baseline window, got:\n%s", out)
+	}
+	if !strings.Contains(out, "highest severity: none") {
+		t.Fatalf("expected highest severity none without baseline window, got:\n%s", out)
+	}
+}
+
 func TestRoadmapEntropyCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {

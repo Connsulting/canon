@@ -83,6 +83,7 @@ Roadmap-entropy options:
 - `--window <n>` specs per recent/baseline comparison window (default: `8`)
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+- when the baseline window has zero specs (insufficient history), no findings are emitted
 - threshold failures return a non-zero exit code, which is intended for CI gating
 
 Privacy-check options:
