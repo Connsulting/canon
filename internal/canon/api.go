@@ -52,3 +52,15 @@ func ParsePrivacyCheckSeverityForCLI(value string) (PrivacyCheckSeverity, error)
 func PrivacyCheckExceedsThresholdForCLI(result PrivacyCheckResult, threshold PrivacyCheckSeverity) bool {
 	return privacyCheckExceedsThreshold(result, threshold)
 }
+
+func LoggingAuditForCLI(root string, opts LoggingAuditOptions) (LoggingAuditResult, error) {
+	return LoggingAudit(root, opts)
+}
+
+func ParseLoggingAuditSeverityForCLI(value string) (LoggingAuditSeverity, error) {
+	return parseLoggingAuditSeverity(value)
+}
+
+func LoggingAuditExceedsThresholdForCLI(result LoggingAuditResult, threshold LoggingAuditSeverity) bool {
+	return loggingAuditExceedsThreshold(result, threshold)
+}

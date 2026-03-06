@@ -244,14 +244,14 @@ type PrivacyCheckSummary struct {
 }
 
 type PrivacyCheckContextSummary struct {
-	FoundFiles      int `json:"found_files"`
-	IncludedFiles   int `json:"included_files"`
-	ExcludedFiles   int `json:"excluded_files"`
-	ContextBytes    int `json:"context_bytes"`
-	ContextLimit    int `json:"context_limit"`
-	MaxFileBytes    int `json:"max_file_bytes"`
+	FoundFiles      int  `json:"found_files"`
+	IncludedFiles   int  `json:"included_files"`
+	ExcludedFiles   int  `json:"excluded_files"`
+	ContextBytes    int  `json:"context_bytes"`
+	ContextLimit    int  `json:"context_limit"`
+	MaxFileBytes    int  `json:"max_file_bytes"`
 	TruncatedToFit  bool `json:"truncated_to_fit"`
-	PolicyBytesUsed int `json:"policy_bytes_used"`
+	PolicyBytesUsed int  `json:"policy_bytes_used"`
 }
 
 type PrivacyCheckResult struct {
@@ -263,6 +263,59 @@ type PrivacyCheckResult struct {
 	Summary           PrivacyCheckSummary        `json:"summary"`
 	FailOn            PrivacyCheckSeverity       `json:"fail_on,omitempty"`
 	ThresholdExceeded bool                       `json:"threshold_exceeded"`
+}
+
+type LoggingAuditSeverity string
+
+const (
+	LoggingAuditSeverityNone     LoggingAuditSeverity = "none"
+	LoggingAuditSeverityLow      LoggingAuditSeverity = "low"
+	LoggingAuditSeverityMedium   LoggingAuditSeverity = "medium"
+	LoggingAuditSeverityHigh     LoggingAuditSeverity = "high"
+	LoggingAuditSeverityCritical LoggingAuditSeverity = "critical"
+)
+
+type LoggingAuditOptions struct {
+	FailOn LoggingAuditSeverity
+}
+
+type LoggingAuditFinding struct {
+	RuleID     string               `json:"rule_id"`
+	Category   string               `json:"category"`
+	Severity   LoggingAuditSeverity `json:"severity"`
+	SpecID     string               `json:"spec_id,omitempty"`
+	LedgerPath string               `json:"ledger_path,omitempty"`
+	SpecPath   string               `json:"spec_path,omitempty"`
+	SourcePath string               `json:"source_path,omitempty"`
+	Field      string               `json:"field,omitempty"`
+	Message    string               `json:"message"`
+}
+
+type LoggingAuditSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type LoggingAuditSummary struct {
+	TotalFindings      int                        `json:"total_findings"`
+	HighestSeverity    LoggingAuditSeverity       `json:"highest_severity"`
+	FindingsBySeverity LoggingAuditSeverityCounts `json:"findings_by_severity"`
+}
+
+type LoggingAuditResult struct {
+	Root              string                `json:"root"`
+	LedgerDir         string                `json:"ledger_dir"`
+	SpecsDir          string                `json:"specs_dir"`
+	SourcesDir        string                `json:"sources_dir"`
+	LedgerEntries     int                   `json:"ledger_entries"`
+	SpecFiles         int                   `json:"spec_files"`
+	SourceFiles       int                   `json:"source_files"`
+	Findings          []LoggingAuditFinding `json:"findings"`
+	Summary           LoggingAuditSummary   `json:"summary"`
+	FailOn            LoggingAuditSeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                  `json:"threshold_exceeded"`
 }
 
 type Index struct {

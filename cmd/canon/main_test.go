@@ -1191,6 +1191,137 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestLoggingAuditCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ConflictMode: "off",
+		Text: `---
+id: loga001
+type: feature
+title: "Logging Audit Healthy Fixture"
+domain: canon
+created: 2026-03-06T00:00:00Z
+depends_on: []
+touched_domains: [canon]
+---
+Healthy fixture content.
+`,
+	}); err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"logging-audit", "--root", root, "--json"}); err != nil {
+			t.Fatalf("logging-audit command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		LedgerEntries int `json:"ledger_entries"`
+		SpecFiles     int `json:"spec_files"`
+		SourceFiles   int `json:"source_files"`
+		Summary       struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.LedgerEntries != 1 || payload.SpecFiles != 1 || payload.SourceFiles != 1 {
+		t.Fatalf("unexpected artifact counts in payload: %+v", payload)
+	}
+	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+}
+
+func TestLoggingAuditCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		ConflictMode: "off",
+		Text: `---
+id: loga002
+type: feature
+title: "Logging Audit Threshold Fixture"
+domain: canon
+created: 2026-03-06T00:10:00Z
+depends_on: []
+touched_domains: [canon]
+---
+Fixture content for threshold test.
+`,
+	}); err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	ledgerPaths, err := filepath.Glob(filepath.Join(root, ".canon", "ledger", "*.json"))
+	if err != nil {
+		t.Fatalf("failed listing ledger entries: %v", err)
+	}
+	if len(ledgerPaths) != 1 {
+		t.Fatalf("expected one ledger entry, got %d", len(ledgerPaths))
+	}
+
+	var entry canon.LedgerEntry
+	b, err := os.ReadFile(ledgerPaths[0])
+	if err != nil {
+		t.Fatalf("failed reading ledger fixture: %v", err)
+	}
+	if err := json.Unmarshal(b, &entry); err != nil {
+		t.Fatalf("failed decoding ledger fixture: %v", err)
+	}
+	entry.ContentHash = "deadbeef"
+	updated, err := json.MarshalIndent(entry, "", "  ")
+	if err != nil {
+		t.Fatalf("failed encoding tampered ledger fixture: %v", err)
+	}
+	updated = append(updated, '\n')
+	if err := os.WriteFile(ledgerPaths[0], updated, 0o644); err != nil {
+		t.Fatalf("failed writing tampered ledger fixture: %v", err)
+	}
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"logging-audit", "--root", root, "--fail-on", "medium"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected logging-audit to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "logging-audit threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") {
+		t.Fatalf("expected output to include high severity summary, got:\n%s", out)
+	}
+}
+
+func TestLoggingAuditCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"logging-audit", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoggingAuditCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"logging-audit", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for logging-audit positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPrivacyCheckCommandJSONOutputWithResponseFile(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {

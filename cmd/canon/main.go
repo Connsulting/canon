@@ -62,6 +62,8 @@ func run(args []string) error {
 		return cmdBlame(args[1:])
 	case "deps-risk":
 		return cmdDepsRisk(args[1:])
+	case "logging-audit":
+		return cmdLoggingAudit(args[1:])
 	case "privacy-check":
 		return cmdPrivacyCheck(args[1:])
 	case "version", "-v", "--version":
@@ -677,6 +679,55 @@ func cmdDepsRisk(args []string) error {
 	return nil
 }
 
+func cmdLoggingAudit(args []string) error {
+	fs := flag.NewFlagSet("logging-audit", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("logging-audit does not accept positional arguments")
+	}
+
+	failOn := canon.LoggingAuditSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParseLoggingAuditSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.LoggingAuditSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.LoggingAuditForCLI(abs, canon.LoggingAuditOptions{
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderLoggingAuditText(result))
+	}
+
+	if failOn != "" && canon.LoggingAuditExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("logging-audit threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func cmdPrivacyCheck(args []string) error {
 	fs := flag.NewFlagSet("privacy-check", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -821,6 +872,61 @@ func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 		}
 		fmt.Fprintf(&b, ": %s\n", finding.Message)
 	}
+	return b.String()
+}
+
+func renderLoggingAuditText(result canon.LoggingAuditResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "logging audit: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "ledger dir: %s\n", filepath.ToSlash(result.LedgerDir))
+	fmt.Fprintf(&b, "specs dir: %s\n", filepath.ToSlash(result.SpecsDir))
+	fmt.Fprintf(&b, "sources dir: %s\n", filepath.ToSlash(result.SourcesDir))
+	fmt.Fprintf(&b, "ledger entries: %d\n", result.LedgerEntries)
+	fmt.Fprintf(&b, "spec files: %d\n", result.SpecFiles)
+	fmt.Fprintf(&b, "source files: %d\n", result.SourceFiles)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no logging audit findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		details := make([]string, 0, 4)
+		if finding.SpecID != "" {
+			details = append(details, "spec_id="+finding.SpecID)
+		}
+		if finding.LedgerPath != "" {
+			details = append(details, "ledger_path="+finding.LedgerPath)
+		}
+		if finding.SpecPath != "" {
+			details = append(details, "spec_path="+finding.SpecPath)
+		}
+		if finding.SourcePath != "" {
+			details = append(details, "source_path="+finding.SourcePath)
+		}
+
+		fmt.Fprintf(&b, "  - [%s] [%s] %s", strings.ToUpper(string(finding.Severity)), finding.Category, finding.RuleID)
+		if len(details) > 0 {
+			fmt.Fprintf(&b, " (%s)", strings.Join(details, ", "))
+		}
+		fmt.Fprintf(&b, ": %s\n", finding.Message)
+	}
+
 	return b.String()
 }
 
@@ -1133,6 +1239,7 @@ func printUsage() {
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
+	fmt.Println("  logging-audit audit .canon logging artifacts for completeness and quality")
 	fmt.Println("  privacy-check compare repo code against privacy policy claims")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
@@ -1148,6 +1255,11 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("logging-audit options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --json                 output machine-readable JSON")
+	fmt.Println("  --fail-on <severity>   fail on severity threshold: low, medium, high, critical")
 	fmt.Println()
 	fmt.Println("privacy-check options:")
 	fmt.Println("  --root <path>            repository root (default: \".\")")
