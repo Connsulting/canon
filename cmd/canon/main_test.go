@@ -1191,6 +1191,105 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestTestFlakinessCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	writeCLITestFlakinessFixture(t, root)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"test-flakiness", "--root", root, "--runs", "4", "--json"}); err != nil {
+			t.Fatalf("test-flakiness command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Runs     int      `json:"runs"`
+		Packages []string `json:"packages"`
+		Summary  struct {
+			FlakyTests         int `json:"flaky_tests"`
+			StablePassingTests int `json:"stable_passing_tests"`
+			StableFailingTests int `json:"stable_failing_tests"`
+		} `json:"summary"`
+		Findings []struct {
+			Package      string `json:"package"`
+			Test         string `json:"test"`
+			RunsObserved int    `json:"runs_observed"`
+			Outcomes     struct {
+				Pass int `json:"pass"`
+				Fail int `json:"fail"`
+			} `json:"outcomes"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.Runs != 4 {
+		t.Fatalf("expected runs=4, got %d", payload.Runs)
+	}
+	if len(payload.Packages) != 1 || payload.Packages[0] != "./..." {
+		t.Fatalf("unexpected package scope: %+v", payload.Packages)
+	}
+	if payload.Summary.FlakyTests != 1 {
+		t.Fatalf("expected one flaky test, got %+v", payload.Summary)
+	}
+	if payload.Summary.StablePassingTests != 1 {
+		t.Fatalf("expected one stable passing test, got %+v", payload.Summary)
+	}
+	if payload.Summary.StableFailingTests != 0 {
+		t.Fatalf("expected zero stable failing tests, got %+v", payload.Summary)
+	}
+	if len(payload.Findings) != 1 {
+		t.Fatalf("expected one flaky finding, got %d", len(payload.Findings))
+	}
+	if payload.Findings[0].Package != "example.com/flakyfixture" || payload.Findings[0].Test != "TestAlternating" {
+		t.Fatalf("unexpected finding identity: %+v", payload.Findings[0])
+	}
+	if payload.Findings[0].Outcomes.Pass != 2 || payload.Findings[0].Outcomes.Fail != 2 {
+		t.Fatalf("unexpected flaky outcome counts: %+v", payload.Findings[0].Outcomes)
+	}
+	if payload.Findings[0].RunsObserved != 4 {
+		t.Fatalf("expected runs_observed=4, got %d", payload.Findings[0].RunsObserved)
+	}
+}
+
+func TestTestFlakinessCommandReturnsErrorWhenFailOnFlakyEnabled(t *testing.T) {
+	root := t.TempDir()
+	writeCLITestFlakinessFixture(t, root)
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"test-flakiness", "--root", root, "--runs", "4", "--fail-on-flaky"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected test-flakiness to fail when flaky tests are detected")
+	}
+	if !strings.Contains(commandErr.Error(), "test flakiness threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "flaky tests:") {
+		t.Fatalf("expected text output with flaky findings, got:\n%s", out)
+	}
+}
+
+func TestTestFlakinessCommandRejectsRunsLessThanTwo(t *testing.T) {
+	err := run([]string{"test-flakiness", "--runs", "1"})
+	if err == nil {
+		t.Fatalf("expected error for runs < 2")
+	}
+	if !strings.Contains(err.Error(), "--runs must be at least 2") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTestFlakinessCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"test-flakiness", "extra"})
+	if err == nil {
+		t.Fatalf("expected positional argument validation error")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPrivacyCheckCommandJSONOutputWithResponseFile(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
@@ -1424,5 +1523,47 @@ func writeCLIGoMod(t *testing.T, root string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing go.mod fixture: %v", err)
+	}
+}
+
+func writeCLITestFlakinessFixture(t *testing.T, root string) {
+	t.Helper()
+	writeCLIGoMod(t, root, `module example.com/flakyfixture
+
+go 1.22
+`)
+
+	testFile := `package flakyfixture
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestAlternating(t *testing.T) {
+	statePath := filepath.Join(".", ".test-flakiness-state")
+	current, err := os.ReadFile(statePath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read state file: %v", err)
+	}
+
+	if string(current) == "fail" {
+		if err := os.WriteFile(statePath, []byte("pass"), 0o644); err != nil {
+			t.Fatalf("write state file: %v", err)
+		}
+		t.Fatalf("intentional alternating failure")
+	}
+
+	if err := os.WriteFile(statePath, []byte("fail"), 0o644); err != nil {
+		t.Fatalf("write state file: %v", err)
+	}
+}
+
+func TestStablePass(t *testing.T) {}
+`
+
+	if err := os.WriteFile(filepath.Join(root, "flaky_test.go"), []byte(testFile), 0o644); err != nil {
+		t.Fatalf("failed writing flaky fixture test file: %v", err)
 	}
 }

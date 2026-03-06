@@ -60,6 +60,8 @@ func run(args []string) error {
 		return cmdCheck(args[1:])
 	case "blame":
 		return cmdBlame(args[1:])
+	case "test-flakiness":
+		return cmdTestFlakiness(args[1:])
 	case "deps-risk":
 		return cmdDepsRisk(args[1:])
 	case "privacy-check":
@@ -628,6 +630,54 @@ func cmdStatus(args []string) error {
 	return nil
 }
 
+func cmdTestFlakiness(args []string) error {
+	fs := flag.NewFlagSet("test-flakiness", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	runs := fs.Int("runs", 4, "number of repeated go test executions (minimum: 2)")
+	var packages stringSliceFlag
+	fs.Var(&packages, "package", "Go package pattern to test (repeatable)")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlaky := fs.Bool("fail-on-flaky", false, "fail command when flaky tests are detected")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("test-flakiness does not accept positional arguments")
+	}
+	if *runs < 2 {
+		return errors.New("--runs must be at least 2")
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.TestFlakinessForCLI(abs, canon.TestFlakinessOptions{
+		Runs:        *runs,
+		Packages:    packages.Values(),
+		FailOnFlaky: *failOnFlaky,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderTestFlakinessText(result))
+	}
+
+	if *failOnFlaky && canon.TestFlakinessExceedsThresholdForCLI(result) {
+		return fmt.Errorf("test flakiness threshold failed: flaky tests=%d", result.Summary.FlakyTests)
+	}
+	return nil
+}
+
 func cmdDepsRisk(args []string) error {
 	fs := flag.NewFlagSet("deps-risk", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
@@ -770,6 +820,47 @@ func cmdPrivacyCheck(args []string) error {
 		return fmt.Errorf("privacy-check threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
 	}
 	return nil
+}
+
+func renderTestFlakinessText(result canon.TestFlakinessResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "test flakiness analysis: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "runs: %d\n", result.Runs)
+	fmt.Fprintf(&b, "packages: [%s]\n", strings.Join(result.Packages, ", "))
+	fmt.Fprintf(
+		&b,
+		"summary: total=%d flaky=%d stable_pass=%d stable_fail=%d skip_only=%d\n",
+		result.Summary.TotalTests,
+		result.Summary.FlakyTests,
+		result.Summary.StablePassingTests,
+		result.Summary.StableFailingTests,
+		result.Summary.SkipOnlyTests,
+	)
+	if result.FailGate != nil {
+		fmt.Fprintf(&b, "fail-on-flaky: enabled=%t exceeded=%t\n", result.FailGate.Enabled, result.FailGate.Exceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no flaky tests detected\n")
+		return b.String()
+	}
+
+	b.WriteString("flaky tests:\n")
+	for _, finding := range result.Findings {
+		fmt.Fprintf(
+			&b,
+			"  - %s %s pass=%d fail=%d skip=%d observed=%d\n",
+			finding.Package,
+			finding.Test,
+			finding.Outcomes.Pass,
+			finding.Outcomes.Fail,
+			finding.Outcomes.Skip,
+			finding.RunsObserved,
+		)
+	}
+
+	return b.String()
 }
 
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
@@ -1132,6 +1223,7 @@ func printUsage() {
 	fmt.Println("  render  render expected state from canonical specs")
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
+	fmt.Println("  test-flakiness analyze repeated Go test runs for unstable tests")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  privacy-check compare repo code against privacy policy claims")
 	fmt.Println("  status  show repository summary")
@@ -1148,6 +1240,13 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("test-flakiness options:")
+	fmt.Println("  --root <path>            repository root (default: \".\")")
+	fmt.Println("  --runs <n>               repeated go test runs (minimum: 2, default: 4)")
+	fmt.Println("  --package <pattern>      Go package pattern (repeatable; default: ./...)")
+	fmt.Println("  --json                   output machine-readable JSON")
+	fmt.Println("  --fail-on-flaky          fail command when flaky tests are detected")
 	fmt.Println()
 	fmt.Println("privacy-check options:")
 	fmt.Println("  --root <path>            repository root (default: \".\")")

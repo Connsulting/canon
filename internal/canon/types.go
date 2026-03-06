@@ -181,6 +181,47 @@ type DependencyRiskResult struct {
 	ThresholdExceeded bool                    `json:"threshold_exceeded"`
 }
 
+type TestFlakinessOptions struct {
+	Runs        int
+	Packages    []string
+	FailOnFlaky bool
+}
+
+type TestFlakinessOutcomeCounts struct {
+	Pass int `json:"pass"`
+	Fail int `json:"fail"`
+	Skip int `json:"skip"`
+}
+
+type TestFlakinessFinding struct {
+	Package      string                     `json:"package"`
+	Test         string                     `json:"test"`
+	Outcomes     TestFlakinessOutcomeCounts `json:"outcomes"`
+	RunsObserved int                        `json:"runs_observed"`
+}
+
+type TestFlakinessSummary struct {
+	TotalTests         int `json:"total_tests"`
+	FlakyTests         int `json:"flaky_tests"`
+	StablePassingTests int `json:"stable_passing_tests"`
+	StableFailingTests int `json:"stable_failing_tests"`
+	SkipOnlyTests      int `json:"skip_only_tests"`
+}
+
+type TestFlakinessFailGate struct {
+	Enabled  bool `json:"enabled"`
+	Exceeded bool `json:"exceeded"`
+}
+
+type TestFlakinessResult struct {
+	Root     string                 `json:"root"`
+	Runs     int                    `json:"runs"`
+	Packages []string               `json:"packages"`
+	Findings []TestFlakinessFinding `json:"findings"`
+	Summary  TestFlakinessSummary   `json:"summary"`
+	FailGate *TestFlakinessFailGate `json:"fail_gate,omitempty"`
+}
+
 type PrivacyCheckStatus string
 
 const (
@@ -244,14 +285,14 @@ type PrivacyCheckSummary struct {
 }
 
 type PrivacyCheckContextSummary struct {
-	FoundFiles      int `json:"found_files"`
-	IncludedFiles   int `json:"included_files"`
-	ExcludedFiles   int `json:"excluded_files"`
-	ContextBytes    int `json:"context_bytes"`
-	ContextLimit    int `json:"context_limit"`
-	MaxFileBytes    int `json:"max_file_bytes"`
+	FoundFiles      int  `json:"found_files"`
+	IncludedFiles   int  `json:"included_files"`
+	ExcludedFiles   int  `json:"excluded_files"`
+	ContextBytes    int  `json:"context_bytes"`
+	ContextLimit    int  `json:"context_limit"`
+	MaxFileBytes    int  `json:"max_file_bytes"`
 	TruncatedToFit  bool `json:"truncated_to_fit"`
-	PolicyBytesUsed int `json:"policy_bytes_used"`
+	PolicyBytesUsed int  `json:"policy_bytes_used"`
 }
 
 type PrivacyCheckResult struct {

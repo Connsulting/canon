@@ -41,6 +41,14 @@ func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold
 	return dependencyRiskExceedsThreshold(result, threshold)
 }
 
+func TestFlakinessForCLI(root string, opts TestFlakinessOptions) (TestFlakinessResult, error) {
+	return TestFlakiness(root, opts)
+}
+
+func TestFlakinessExceedsThresholdForCLI(result TestFlakinessResult) bool {
+	return testFlakinessExceedsThreshold(result)
+}
+
 func PrivacyCheckForCLI(root string, opts PrivacyCheckOptions) (PrivacyCheckResult, error) {
 	return PrivacyCheck(root, opts)
 }
