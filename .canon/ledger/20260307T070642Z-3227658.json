@@ -1,0 +1,14 @@
+{
+  "spec_id": "3227658",
+  "title": "PII Exposure Scanner Draft Spec",
+  "type": "feature",
+  "domain": "general",
+  "parents": [
+    "4e9a21f"
+  ],
+  "sequence": 1772867202255438297,
+  "ingested_at": "2026-03-07T07:06:42Z",
+  "content_hash": "f8392b7ab8243af7a86fd853331fdc9519afbcb468897b9d6bb56174102b10c5",
+  "spec_path": ".canon/specs/3227658.spec.md",
+  "source_path": ".canon/sources/3227658.source.md"
+}

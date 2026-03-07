@@ -7,3 +7,17 @@ state/
 specs/
 !specs/.gitkeep
 !.canon/specs/
+
+# Sensitive local secrets and data dumps
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.*
+secrets.*
+*.csv
+*.xlsx
+*.sql
+!db/migrations/*.sql
+!**/migrations/*.sql
