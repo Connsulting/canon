@@ -4,6 +4,34 @@ bin/
 coverage.out
 .DS_Store
 state/
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.*
+secrets.*
+
+# Likely user-data exports/backups
+**/dumps/
+**/exports/
+**/backups/
+*.dump.sql
+*.export.sql
+*.backup.sql
+*.dump.csv
+*.export.csv
+*.backup.csv
+*.dump.xlsx
+*.export.xlsx
+*.backup.xlsx
+
 specs/
 !specs/.gitkeep
 !.canon/specs/

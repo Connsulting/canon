@@ -407,6 +407,84 @@ func TestScanProjectForInitRespectsGitignore(t *testing.T) {
 	}
 }
 
+func TestScanProjectForInitSkipsSensitiveFilesByDefault(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"README.md":                  "# Sample\n",
+		".env":                       "OPENAI_API_KEY=TEST_KEY_ONLY\n",
+		".env.local":                 "DB_PASSWORD=example_local\n",
+		".env.example":               "DB_PASSWORD=example\n",
+		"keys/private.key":           "private-key\n",
+		"certs/server.pem":           "pem\n",
+		"credentials.dev":            "token=abc\n",
+		"secrets.prod":               "token=prod\n",
+		"exports/users_export.csv":   "email,name\nredacted_email,SampleUser\n",
+		"db/dumps/customers.sql":     "insert into users values ('redacted_value');\n",
+		"backups/users_dump.xlsx":    "binary-ish\n",
+		"db/migrations/001_init.sql": "create table users(id text);\n",
+	}
+	for rel, content := range files {
+		abs := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir for %s failed: %v", rel, err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s failed: %v", rel, err)
+		}
+	}
+
+	scan, err := scanProjectForInit(root, initScanOptions{
+		ContextLimitBytes: 100 * 1024,
+		MaxFileBytes:      initDefaultMaxFileBytes,
+	})
+	if err != nil {
+		t.Fatalf("scanProjectForInit failed: %v", err)
+	}
+
+	for _, mustInclude := range []string{"README.md", ".env.example", "db/migrations/001_init.sql"} {
+		if !strings.Contains(scan.Context, "## File: "+mustInclude+"\n") {
+			t.Fatalf("expected %s to be included in context", mustInclude)
+		}
+	}
+	for _, mustExclude := range []string{
+		".env",
+		".env.local",
+		"keys/private.key",
+		"certs/server.pem",
+		"credentials.dev",
+		"secrets.prod",
+		"exports/users_export.csv",
+		"db/dumps/customers.sql",
+		"backups/users_dump.xlsx",
+	} {
+		if strings.Contains(scan.Context, "## File: "+mustExclude+"\n") {
+			t.Fatalf("expected %s to be excluded from context", mustExclude)
+		}
+	}
+}
+
+func TestScanProjectForInitAllowsSensitiveFilesWhenExplicitlyIncluded(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("OPENAI_API_KEY=EXPLICIT_TEST_VALUE\n"), 0o644); err != nil {
+		t.Fatalf("write .env failed: %v", err)
+	}
+
+	scan, err := scanProjectForInit(root, initScanOptions{
+		ContextLimitBytes: 100 * 1024,
+		MaxFileBytes:      initDefaultMaxFileBytes,
+		Include:           []string{".env"},
+	})
+	if err != nil {
+		t.Fatalf("scanProjectForInit failed: %v", err)
+	}
+	if !strings.Contains(scan.Context, "## File: .env\n") {
+		t.Fatalf("expected explicit include to allow .env in context")
+	}
+}
+
 func TestScanProjectForInitSkipsCacheAndVenvArtifacts(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {

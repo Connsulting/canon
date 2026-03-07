@@ -467,6 +467,10 @@ func scanProjectForInit(root string, options initScanOptions) (initScanReport, e
 				excluded++
 				return nil
 			}
+			if isSensitiveInitPath(rel) {
+				excluded++
+				return nil
+			}
 		}
 
 		if isLikelyBinaryPath(rel) {
@@ -578,6 +582,42 @@ func isLikelyBinaryPath(rel string) bool {
 	if strings.HasSuffix(lower, ".min.js") || strings.HasSuffix(lower, ".min.css") {
 		return true
 	}
+	return false
+}
+
+func isSensitiveInitPath(rel string) bool {
+	lower := strings.ToLower(rel)
+	base := path.Base(lower)
+
+	switch {
+	case base == ".env":
+		return true
+	case strings.HasPrefix(base, ".env."):
+		switch base {
+		case ".env.example", ".env.sample", ".env.template":
+			return false
+		}
+		return true
+	case strings.HasSuffix(base, ".pem"),
+		strings.HasSuffix(base, ".key"),
+		strings.HasSuffix(base, ".p12"),
+		strings.HasSuffix(base, ".pfx"):
+		return true
+	case strings.HasPrefix(base, "credentials."),
+		strings.HasPrefix(base, "secrets."):
+		return true
+	}
+
+	ext := path.Ext(base)
+	if ext == ".sql" || ext == ".csv" || ext == ".xlsx" {
+		if strings.Contains(base, "dump") || strings.Contains(base, "export") || strings.Contains(base, "backup") {
+			return true
+		}
+		if strings.Contains(lower, "/dumps/") || strings.Contains(lower, "/exports/") || strings.Contains(lower, "/backups/") {
+			return true
+		}
+	}
+
 	return false
 }
 
