@@ -7,3 +7,27 @@ state/
 specs/
 !specs/.gitkeep
 !.canon/specs/
+
+# Local secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+credentials.*
+secrets.*
+
+# Likely user-data dump artifacts (scoped to avoid hiding source assets)
+dumps/**/*.sql
+dumps/**/*.csv
+dumps/**/*.xlsx
+exports/**/*.sql
+exports/**/*.csv
+exports/**/*.xlsx
+backups/**/*.sql
+backups/**/*.csv
+backups/**/*.xlsx
+*.dump.sql
+*.backup.sql
+*.export.csv
+*.users.csv
+*.pii.csv
