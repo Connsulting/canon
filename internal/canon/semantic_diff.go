@@ -2,7 +2,7 @@ package canon
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -570,36 +570,18 @@ func aiSemanticDiffJSONSchema() string {
 }
 
 func parseAISemanticDiffResponse(root string, responseFile string) (aiSemanticDiffResponse, error) {
-	path := strings.TrimSpace(responseFile)
-	if path == "" {
-		return aiSemanticDiffResponse{}, fmt.Errorf("from-response semantic-diff mode requires --response-file")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	b, err := os.ReadFile(path)
+	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
+		if errors.Is(err, errAIResponseFilePathRequired) {
+			return aiSemanticDiffResponse{}, fmt.Errorf("from-response semantic-diff mode requires --response-file")
+		}
 		return aiSemanticDiffResponse{}, err
 	}
 	return decodeAISemanticDiffResponse(b)
 }
 
 func decodeAISemanticDiffResponse(b []byte) (aiSemanticDiffResponse, error) {
-	var response aiSemanticDiffResponse
-	if err := json.Unmarshal(b, &response); err == nil {
-		return response, nil
-	}
-	text := strings.TrimSpace(string(b))
-	first := strings.Index(text, "{")
-	last := strings.LastIndex(text, "}")
-	if first == -1 || last == -1 || last <= first {
-		return aiSemanticDiffResponse{}, fmt.Errorf("invalid AI semantic-diff response JSON")
-	}
-	fragment := text[first : last+1]
-	if err := json.Unmarshal([]byte(fragment), &response); err != nil {
-		return aiSemanticDiffResponse{}, fmt.Errorf("invalid AI semantic-diff response JSON: %w", err)
-	}
-	return response, nil
+	return decodeAIResponseJSON[aiSemanticDiffResponse](b, "invalid AI semantic-diff response JSON")
 }
 
 func normalizeSemanticDiffExplanations(items []aiSemanticDiffExplanation) []SemanticDiffExplanation {

@@ -1,11 +1,10 @@
 package canon
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -138,39 +137,20 @@ func runHeadlessGCAI(provider string, root string, target []Spec) (aiGCResponse,
 }
 
 func parseAIGCResponse(root string, responseFile string) (aiGCResponse, error) {
-	path := strings.TrimSpace(responseFile)
-	if path == "" {
-		return aiGCResponse{}, fmt.Errorf("from-response gc mode requires --response-file")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	b, err := os.ReadFile(path)
+	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
+		if errors.Is(err, errAIResponseFilePathRequired) {
+			return aiGCResponse{}, fmt.Errorf("from-response gc mode requires --response-file")
+		}
 		return aiGCResponse{}, err
 	}
 	return parseAIGCResponseBytes(b)
 }
 
 func parseAIGCResponseBytes(b []byte) (aiGCResponse, error) {
-	var response aiGCResponse
-	if err := json.Unmarshal(b, &response); err == nil {
-		sort.Slice(response.ConsolidatedSpecs, func(i, j int) bool {
-			left := strings.TrimSpace(response.ConsolidatedSpecs[i].ID)
-			right := strings.TrimSpace(response.ConsolidatedSpecs[j].ID)
-			return left < right
-		})
-		return response, nil
-	}
-	text := strings.TrimSpace(string(b))
-	first := strings.Index(text, "{")
-	last := strings.LastIndex(text, "}")
-	if first == -1 || last == -1 || last <= first {
-		return aiGCResponse{}, fmt.Errorf("invalid AI gc response JSON")
-	}
-	fragment := text[first : last+1]
-	if err := json.Unmarshal([]byte(fragment), &response); err != nil {
-		return aiGCResponse{}, fmt.Errorf("invalid AI gc response JSON: %w", err)
+	response, err := decodeAIResponseJSON[aiGCResponse](b, "invalid AI gc response JSON")
+	if err != nil {
+		return aiGCResponse{}, err
 	}
 	sort.Slice(response.ConsolidatedSpecs, func(i, j int) bool {
 		left := strings.TrimSpace(response.ConsolidatedSpecs[i].ID)

@@ -2,11 +2,10 @@ package canon
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -322,40 +321,20 @@ func aiRenderJSONSchema() string {
 }
 
 func parseAIRenderResponse(root string, responseFile string) (aiRenderResponse, error) {
-	path := strings.TrimSpace(responseFile)
-	if path == "" {
-		return aiRenderResponse{}, fmt.Errorf("from-response render mode requires --response-file")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	b, err := os.ReadFile(path)
+	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
+		if errors.Is(err, errAIResponseFilePathRequired) {
+			return aiRenderResponse{}, fmt.Errorf("from-response render mode requires --response-file")
+		}
 		return aiRenderResponse{}, err
 	}
 	return decodeAIRenderResponse(b)
 }
 
 func decodeAIRenderResponse(b []byte) (aiRenderResponse, error) {
-	var response aiRenderResponse
-	if err := json.Unmarshal(b, &response); err == nil {
-		sort.Slice(response.DomainDocs, func(i, j int) bool {
-			return response.DomainDocs[i].Domain < response.DomainDocs[j].Domain
-		})
-		sort.Slice(response.InteractionDocs, func(i, j int) bool {
-			return response.InteractionDocs[i].Name < response.InteractionDocs[j].Name
-		})
-		return response, nil
-	}
-	text := strings.TrimSpace(string(b))
-	first := strings.Index(text, "{")
-	last := strings.LastIndex(text, "}")
-	if first == -1 || last == -1 || last <= first {
-		return aiRenderResponse{}, fmt.Errorf("invalid AI render response JSON")
-	}
-	fragment := text[first : last+1]
-	if err := json.Unmarshal([]byte(fragment), &response); err != nil {
-		return aiRenderResponse{}, fmt.Errorf("invalid AI render response JSON: %w", err)
+	response, err := decodeAIResponseJSON[aiRenderResponse](b, "invalid AI render response JSON")
+	if err != nil {
+		return aiRenderResponse{}, err
 	}
 	sort.Slice(response.DomainDocs, func(i, j int) bool {
 		return response.DomainDocs[i].Domain < response.DomainDocs[j].Domain

@@ -1,11 +1,10 @@
 package canon
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -332,36 +331,18 @@ func aiCheckJSONSchema() string {
 }
 
 func parseAICheckResponse(root string, responseFile string) (aiCheckResponse, error) {
-	path := strings.TrimSpace(responseFile)
-	if path == "" {
-		return aiCheckResponse{}, fmt.Errorf("from-response check mode requires --response-file")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	b, err := os.ReadFile(path)
+	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
+		if errors.Is(err, errAIResponseFilePathRequired) {
+			return aiCheckResponse{}, fmt.Errorf("from-response check mode requires --response-file")
+		}
 		return aiCheckResponse{}, err
 	}
 	return decodeAICheckResponse(b)
 }
 
 func decodeAICheckResponse(b []byte) (aiCheckResponse, error) {
-	var response aiCheckResponse
-	if err := json.Unmarshal(b, &response); err == nil {
-		return response, nil
-	}
-	text := strings.TrimSpace(string(b))
-	first := strings.Index(text, "{")
-	last := strings.LastIndex(text, "}")
-	if first == -1 || last == -1 || last <= first {
-		return aiCheckResponse{}, fmt.Errorf("invalid AI check response JSON")
-	}
-	fragment := text[first : last+1]
-	if err := json.Unmarshal([]byte(fragment), &response); err != nil {
-		return aiCheckResponse{}, fmt.Errorf("invalid AI check response JSON: %w", err)
-	}
-	return response, nil
+	return decodeAIResponseJSON[aiCheckResponse](b, "invalid AI check response JSON")
 }
 
 func checkConflictsFromAIResponse(response aiCheckResponse, specByID map[string]Spec, targetID string) ([]CheckConflict, error) {
