@@ -22,6 +22,7 @@ Phase 1 only:
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon schema-evolution`
+- `go run ./cmd/canon semantic-diff`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
 
@@ -101,6 +102,26 @@ Schema evolution JSON contract:
 - Invalid `--fail-on` values are rejected.
 - When threshold is exceeded, the command still emits JSON but exits non-zero.
 
+Semantic diff options:
+- `--root <path>` repository root used for `git diff` and config (default: `.`)
+- `--diff-file <path>` read unified diff from file instead of `git diff`
+- `--base-ref <ref>` git base ref for comparison (requires `--head-ref`)
+- `--head-ref <ref>` git head ref for comparison (requires `--base-ref`)
+- `--json` emit machine-readable JSON explanations and summary
+- `--ai <mode>` AI mode: `auto` or `from-response` (default: `auto`)
+- `--ai-provider <name>` provider override: `codex` or `claude`
+- `--response-file <path>` deterministic replay input for `from-response` mode (implied when provided with `auto`)
+
+Semantic diff JSON contract:
+- Keys: `root`, `diff_source`, `diff_bytes`, `changed_file_count`, `total_added_lines`, `total_deleted_lines`, `total_hunks`, `changed_files`, `explanations`, `summary`.
+- `changed_files` item keys: `file`, `status`, `added_lines`, `deleted_lines`, `hunk_count`.
+- `explanations` item keys: `id`, `category`, `impact`, `summary`, `rationale`, optional `evidence`.
+- Evidence keys: `file`, `kind`, optional `old_start`, `old_lines`, `new_start`, `new_lines`.
+- Summary keys: `ai_model`, `ai_summary`, `total_explanations`, `highest_impact`, `impact_counts`, `category_counts`.
+- Positional arguments are rejected.
+- Invalid `--ai` values are rejected.
+- `--diff-file` is mutually exclusive with `--base-ref/--head-ref`.
+
 GC options:
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
@@ -120,6 +141,9 @@ go run ./cmd/canon deps-risk --root .
 go run ./cmd/canon deps-risk --root . --fail-on medium
 go run ./cmd/canon schema-evolution --root .
 go run ./cmd/canon schema-evolution --root . --fail-on medium
+go run ./cmd/canon semantic-diff --root .
+go run ./cmd/canon semantic-diff --root . --base-ref main --head-ref feature/branch --json
+go run ./cmd/canon semantic-diff --root . --diff-file fixtures/semantic.diff --response-file fixtures/semantic-response.json --json
 ```
 
 ## Interactive Raw Flow

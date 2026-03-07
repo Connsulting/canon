@@ -52,3 +52,7 @@ func ParseSchemaEvolutionSeverityForCLI(value string) (SchemaEvolutionSeverity, 
 func SchemaEvolutionExceedsThresholdForCLI(result SchemaEvolutionResult, threshold SchemaEvolutionSeverity) bool {
 	return schemaEvolutionExceedsThreshold(result, threshold)
 }
+
+func SemanticDiffForCLI(root string, opts SemanticDiffOptions) (SemanticDiffResult, error) {
+	return SemanticDiff(root, opts)
+}
