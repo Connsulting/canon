@@ -64,6 +64,8 @@ func run(args []string) error {
 		return cmdDepsRisk(args[1:])
 	case "schema-evolution":
 		return cmdSchemaEvolution(args[1:])
+	case "privacy-check":
+		return cmdPrivacyCheck(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -726,6 +728,85 @@ func cmdSchemaEvolution(args []string) error {
 	return nil
 }
 
+func cmdPrivacyCheck(args []string) error {
+	fs := flag.NewFlagSet("privacy-check", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	policyFile := fs.String("policy-file", "", "path to privacy policy file (required)")
+	var codePaths stringSliceFlag
+	fs.Var(&codePaths, "code-path", "path to include for code context (repeatable)")
+	contextLimit := fs.Int("context-limit", 100*1024, "max total code context bytes")
+	maxFileBytes := fs.Int("max-file-bytes", 8*1024, "max bytes loaded per code file")
+	aiMode := fs.String("ai", "auto", "AI mode: auto, from-response")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "JSON response file from headless AI run")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("privacy-check does not accept positional arguments")
+	}
+
+	failOn := canon.PrivacyPolicySeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParsePrivacyPolicySeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.PrivacyPolicySeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
+		return err
+	}
+	provider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		provider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+	mode := strings.ToLower(strings.TrimSpace(*aiMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
+		mode = "from-response"
+	}
+
+	result, err := canon.PrivacyPolicyCheckForCLI(abs, canon.PrivacyPolicyOptions{
+		PolicyFile:   strings.TrimSpace(*policyFile),
+		CodePaths:    codePaths.Values(),
+		ContextLimit: *contextLimit,
+		MaxFileBytes: *maxFileBytes,
+		AIMode:       mode,
+		AIProvider:   provider,
+		ResponseFile: strings.TrimSpace(*responseFile),
+		FailOn:       failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderPrivacyCheckText(result))
+	}
+
+	if failOn != "" && canon.PrivacyPolicyExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("privacy policy threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -816,6 +897,51 @@ func renderSchemaEvolutionText(result canon.SchemaEvolutionResult) string {
 		)
 		if finding.Statement != "" {
 			fmt.Fprintf(&b, "      statement: %s\n", finding.Statement)
+		}
+	}
+	return b.String()
+}
+
+func renderPrivacyCheckText(result canon.PrivacyPolicyResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "privacy policy check: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "policy file: %s\n", filepath.ToSlash(result.PolicyFile))
+	fmt.Fprintf(&b, "code paths: %d\n", result.CodePathCount)
+	fmt.Fprintf(&b, "context files: %d\n", result.ContextFileCount)
+	fmt.Fprintf(&b, "context bytes: %d/%d\n", result.ContextBytes, result.ContextLimit)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"status counts: supported=%d contradicted=%d unknown=%d\n",
+		result.Summary.FindingsByStatus.Supported,
+		result.Summary.FindingsByStatus.Contradicted,
+		result.Summary.FindingsByStatus.Unknown,
+	)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no privacy policy consistency findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		fmt.Fprintf(&b, "  - [%s] [%s] %s: %s\n", strings.ToUpper(string(finding.Severity)), strings.ToUpper(string(finding.Status)), finding.ClaimKey, finding.Message)
+		fmt.Fprintf(&b, "      claim: %s\n", finding.Claim)
+		for _, evidence := range finding.Evidence {
+			fmt.Fprintf(&b, "      evidence: %s\n", evidence)
 		}
 	}
 	return b.String()
@@ -1053,6 +1179,7 @@ func printUsage() {
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  schema-evolution scan SQL migrations for potentially breaking schema changes")
+	fmt.Println("  privacy-check check repository code against privacy policy claims")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
@@ -1067,6 +1194,18 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("privacy-check options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --policy-file <path>   local privacy policy file to validate (required)")
+	fmt.Println("  --code-path <path>     path to include in code context (repeatable)")
+	fmt.Println("  --context-limit <n>    max code context bytes (default: 102400)")
+	fmt.Println("  --max-file-bytes <n>   max bytes loaded per file (default: 8192)")
+	fmt.Println("  --ai <mode>            AI mode: auto, from-response (default: \"auto\")")
+	fmt.Println("  --ai-provider <name>   AI provider: codex, claude (default: from .canonconfig)")
+	fmt.Println("  --response-file <path> precomputed AI response JSON")
+	fmt.Println("  --json                 emit machine-readable JSON")
+	fmt.Println("  --fail-on <severity>   fail when highest severity >= threshold (low|medium|high|critical)")
 }
 
 func parseCSV(value string) []string {

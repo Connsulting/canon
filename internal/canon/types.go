@@ -227,6 +227,78 @@ type SchemaEvolutionResult struct {
 	ThresholdExceeded  bool                     `json:"threshold_exceeded"`
 }
 
+type PrivacyPolicySeverity string
+
+const (
+	PrivacyPolicySeverityNone     PrivacyPolicySeverity = "none"
+	PrivacyPolicySeverityLow      PrivacyPolicySeverity = "low"
+	PrivacyPolicySeverityMedium   PrivacyPolicySeverity = "medium"
+	PrivacyPolicySeverityHigh     PrivacyPolicySeverity = "high"
+	PrivacyPolicySeverityCritical PrivacyPolicySeverity = "critical"
+)
+
+type PrivacyPolicyStatus string
+
+const (
+	PrivacyPolicyStatusSupported    PrivacyPolicyStatus = "supported"
+	PrivacyPolicyStatusContradicted PrivacyPolicyStatus = "contradicted"
+	PrivacyPolicyStatusUnknown      PrivacyPolicyStatus = "unknown"
+)
+
+type PrivacyPolicyOptions struct {
+	PolicyFile   string
+	CodePaths    []string
+	ContextLimit int
+	MaxFileBytes int
+	AIMode       string
+	AIProvider   string
+	ResponseFile string
+	FailOn       PrivacyPolicySeverity
+}
+
+type PrivacyPolicyFinding struct {
+	ClaimKey string                `json:"claim_key"`
+	Claim    string                `json:"claim"`
+	Status   PrivacyPolicyStatus   `json:"status"`
+	Severity PrivacyPolicySeverity `json:"severity"`
+	Message  string                `json:"message"`
+	Evidence []string              `json:"evidence,omitempty"`
+}
+
+type PrivacyPolicySeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type PrivacyPolicyStatusCounts struct {
+	Supported    int `json:"supported"`
+	Contradicted int `json:"contradicted"`
+	Unknown      int `json:"unknown"`
+}
+
+type PrivacyPolicySummary struct {
+	TotalFindings      int                         `json:"total_findings"`
+	HighestSeverity    PrivacyPolicySeverity       `json:"highest_severity"`
+	FindingsBySeverity PrivacyPolicySeverityCounts `json:"findings_by_severity"`
+	FindingsByStatus   PrivacyPolicyStatusCounts   `json:"findings_by_status"`
+}
+
+type PrivacyPolicyResult struct {
+	Root              string                 `json:"root"`
+	PolicyFile        string                 `json:"policy_file"`
+	CodePathCount     int                    `json:"code_path_count"`
+	ContextFileCount  int                    `json:"context_file_count"`
+	ContextBytes      int                    `json:"context_bytes"`
+	ContextLimit      int                    `json:"context_limit"`
+	MaxFileBytes      int                    `json:"max_file_bytes"`
+	Findings          []PrivacyPolicyFinding `json:"findings"`
+	Summary           PrivacyPolicySummary   `json:"summary"`
+	FailOn            PrivacyPolicySeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                   `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

@@ -52,3 +52,15 @@ func ParseSchemaEvolutionSeverityForCLI(value string) (SchemaEvolutionSeverity, 
 func SchemaEvolutionExceedsThresholdForCLI(result SchemaEvolutionResult, threshold SchemaEvolutionSeverity) bool {
 	return schemaEvolutionExceedsThreshold(result, threshold)
 }
+
+func PrivacyPolicyCheckForCLI(root string, opts PrivacyPolicyOptions) (PrivacyPolicyResult, error) {
+	return PrivacyPolicyCheck(root, opts)
+}
+
+func ParsePrivacyPolicySeverityForCLI(value string) (PrivacyPolicySeverity, error) {
+	return parsePrivacyPolicySeverity(value)
+}
+
+func PrivacyPolicyExceedsThresholdForCLI(result PrivacyPolicyResult, threshold PrivacyPolicySeverity) bool {
+	return privacyPolicyExceedsThreshold(result, threshold)
+}

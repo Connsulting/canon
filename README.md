@@ -22,6 +22,7 @@ Phase 1 only:
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon schema-evolution`
+- `go run ./cmd/canon privacy-check --policy-file <path>`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
 
@@ -75,6 +76,18 @@ Schema evolution options:
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
+Privacy-check options:
+- `--root <path>` repository root containing code and policy file (default: `.`)
+- `--policy-file <path>` local privacy policy document path (required)
+- `--code-path <path>` include only selected paths for code context (repeatable)
+- `--context-limit <bytes>` cap total code context bytes passed to AI (default: `102400`)
+- `--max-file-bytes <bytes>` cap bytes loaded per file before truncation (default: `8192`)
+- `--ai auto|from-response` adjudication mode (default: `auto`)
+- `--ai-provider codex|claude` AI provider override
+- `--response-file <path>` deterministic precomputed AI response JSON
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+
 GC options:
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
@@ -94,6 +107,8 @@ go run ./cmd/canon deps-risk --root .
 go run ./cmd/canon deps-risk --root . --fail-on medium
 go run ./cmd/canon schema-evolution --root .
 go run ./cmd/canon schema-evolution --root . --fail-on medium
+go run ./cmd/canon privacy-check --root . --policy-file docs/privacy-policy.md --code-path cmd --code-path internal
+go run ./cmd/canon privacy-check --root . --policy-file docs/privacy-policy.md --response-file fixtures/privacy-check-response.json --fail-on medium
 ```
 
 ## Interactive Raw Flow
