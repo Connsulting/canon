@@ -64,6 +64,8 @@ func run(args []string) error {
 		return cmdDepsRisk(args[1:])
 	case "schema-evolution":
 		return cmdSchemaEvolution(args[1:])
+	case "semantic-diff":
+		return cmdSemanticDiff(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -726,6 +728,68 @@ func cmdSchemaEvolution(args []string) error {
 	return nil
 }
 
+func cmdSemanticDiff(args []string) error {
+	fs := flag.NewFlagSet("semantic-diff", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	diffFile := fs.String("diff-file", "", "path to unified diff file (defaults to git diff)")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	aiMode := fs.String("ai", "auto", "AI semantic-diff mode: auto, from-response")
+	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	responseFile := fs.String("response-file", "", "JSON response file from headless AI semantic-diff run")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("semantic-diff does not accept positional arguments")
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(*aiMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
+		mode = "from-response"
+	}
+	if mode != "auto" && mode != "from-response" {
+		return fmt.Errorf("invalid --ai mode %q (expected one of: auto, from-response)", strings.TrimSpace(*aiMode))
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := canon.LoadConfig(abs)
+	if err != nil {
+		return err
+	}
+	provider := cfg.AI.Provider
+	if strings.TrimSpace(*aiProviderFlag) != "" {
+		provider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
+	}
+
+	result, err := canon.SemanticDiffForCLI(abs, canon.SemanticDiffOptions{
+		DiffFile:     strings.TrimSpace(*diffFile),
+		AIMode:       mode,
+		AIProvider:   provider,
+		ResponseFile: strings.TrimSpace(*responseFile),
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderSemanticDiffText(result))
+	}
+	return nil
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -816,6 +880,91 @@ func renderSchemaEvolutionText(result canon.SchemaEvolutionResult) string {
 		)
 		if finding.Statement != "" {
 			fmt.Fprintf(&b, "      statement: %s\n", finding.Statement)
+		}
+	}
+	return b.String()
+}
+
+func renderSemanticDiffText(result canon.SemanticDiffResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "semantic diff scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "diff source: %s\n", filepath.ToSlash(result.DiffSource))
+	fmt.Fprintf(&b, "diff bytes: %d\n", result.DiffBytes)
+	fmt.Fprintf(&b, "changed files: %d\n", result.ChangedFileCount)
+	fmt.Fprintf(&b, "line delta: +%d -%d (hunks=%d)\n", result.TotalAddedLines, result.TotalDeletedLines, result.TotalHunks)
+	if strings.TrimSpace(result.Summary.AIModel) != "" {
+		fmt.Fprintf(&b, "ai model: %s\n", result.Summary.AIModel)
+	}
+	if strings.TrimSpace(result.Summary.AISummary) != "" {
+		fmt.Fprintf(&b, "ai summary: %s\n", result.Summary.AISummary)
+	}
+
+	if len(result.ChangedFiles) > 0 {
+		b.WriteString("changed file detail:\n")
+		for _, item := range result.ChangedFiles {
+			fmt.Fprintf(
+				&b,
+				"  - %s (status=%s, +%d, -%d, hunks=%d)\n",
+				item.File,
+				item.Status,
+				item.AddedLines,
+				item.DeletedLines,
+				item.HunkCount,
+			)
+		}
+	}
+
+	fmt.Fprintf(&b, "explanations: %d\n", result.Summary.TotalExplanations)
+	fmt.Fprintf(&b, "highest impact: %s\n", result.Summary.HighestImpact)
+	fmt.Fprintf(
+		&b,
+		"impact counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.ImpactCounts.Low,
+		result.Summary.ImpactCounts.Medium,
+		result.Summary.ImpactCounts.High,
+		result.Summary.ImpactCounts.Critical,
+	)
+	if len(result.Summary.CategoryCounts) > 0 {
+		parts := make([]string, 0, len(result.Summary.CategoryCounts))
+		for _, item := range result.Summary.CategoryCounts {
+			parts = append(parts, fmt.Sprintf("%s=%d", item.Category, item.Count))
+		}
+		fmt.Fprintf(&b, "category counts: %s\n", strings.Join(parts, " "))
+	}
+
+	if len(result.Explanations) == 0 {
+		b.WriteString("no semantic explanations generated\n")
+		return b.String()
+	}
+
+	b.WriteString("explanations detail:\n")
+	for _, explanation := range result.Explanations {
+		fmt.Fprintf(
+			&b,
+			"  - [%s] [%s] %s: %s\n",
+			strings.ToUpper(string(explanation.Impact)),
+			explanation.Category,
+			explanation.ID,
+			explanation.Summary,
+		)
+		if explanation.Rationale != "" && explanation.Rationale != explanation.Summary {
+			fmt.Fprintf(&b, "      rationale: %s\n", explanation.Rationale)
+		}
+		for _, evidence := range explanation.Evidence {
+			if evidence.Kind == canon.SemanticDiffEvidenceKindHunk {
+				fmt.Fprintf(
+					&b,
+					"      evidence: %s (hunk old=%d,%d new=%d,%d)\n",
+					evidence.File,
+					evidence.OldStart,
+					evidence.OldLines,
+					evidence.NewStart,
+					evidence.NewLines,
+				)
+				continue
+			}
+			fmt.Fprintf(&b, "      evidence: %s (file)\n", evidence.File)
 		}
 	}
 	return b.String()
@@ -1053,6 +1202,7 @@ func printUsage() {
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  schema-evolution scan SQL migrations for potentially breaking schema changes")
+	fmt.Println("  semantic-diff explain semantic behavior changes from repository diffs")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
@@ -1067,6 +1217,14 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("semantic-diff options:")
+	fmt.Println("  --root <path>          repository root (default: \".\")")
+	fmt.Println("  --diff-file <path>     read unified diff from file instead of git diff")
+	fmt.Println("  --json                 output machine-readable JSON")
+	fmt.Println("  --ai <mode>            AI mode: auto, from-response (default: \"auto\")")
+	fmt.Println("  --ai-provider <name>   AI provider: codex, claude (default: from .canonconfig)")
+	fmt.Println("  --response-file <path> precomputed AI response JSON for deterministic replay")
 }
 
 func parseCSV(value string) []string {

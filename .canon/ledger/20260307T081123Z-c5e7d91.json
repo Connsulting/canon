@@ -1,0 +1,14 @@
+{
+  "spec_id": "c5e7d91",
+  "title": "Semantic Diff Explainer",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "4e9a21f"
+  ],
+  "sequence": 1772871083706929077,
+  "ingested_at": "2026-03-07T08:11:23Z",
+  "content_hash": "54c7954cb78c9a11d811e092cdac9d76f4b6e11a5768bec63fceac42ede1f752",
+  "spec_path": ".canon/specs/c5e7d91.spec.md",
+  "source_path": ".canon/sources/c5e7d91.source.md"
+}
