@@ -1259,6 +1259,167 @@ func TestSchemaEvolutionCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestRoadmapEntropyCommandJSONOutputShape(t *testing.T) {
+	root := setupCLIRoadmapEntropyFixture(t)
+	writeCLIRoadmapEntropySpec(t, root, "base-1", "feature", "auth", "2026-02-01T00:00:00Z", []string{"auth"}, nil)
+	writeCLIRoadmapEntropySpec(t, root, "recent-1", "technical", "infra", "2026-02-02T00:00:00Z", []string{"infra"}, nil)
+	writeCLIRoadmapEntropyLedgerEntry(t, root, canon.LedgerEntry{
+		SpecID:     "base-1",
+		Title:      "base-1",
+		Type:       "feature",
+		Domain:     "auth",
+		Parents:    []string{},
+		Sequence:   1,
+		IngestedAt: "2026-02-01T00:00:00Z",
+	})
+	writeCLIRoadmapEntropyLedgerEntry(t, root, canon.LedgerEntry{
+		SpecID:     "recent-1",
+		Title:      "recent-1",
+		Type:       "technical",
+		Domain:     "infra",
+		Parents:    []string{},
+		Sequence:   2,
+		IngestedAt: "2026-02-02T00:00:00Z",
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"roadmap-entropy", "--root", root, "--window", "1", "--json"}); err != nil {
+			t.Fatalf("roadmap-entropy command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Window              int  `json:"window"`
+		OrderedSpecCount    int  `json:"ordered_spec_count"`
+		InsufficientHistory bool `json:"insufficient_history"`
+		Summary             struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.Window != 1 || payload.OrderedSpecCount != 2 {
+		t.Fatalf("unexpected scan context payload: %+v", payload)
+	}
+	if payload.InsufficientHistory {
+		t.Fatalf("did not expect insufficient history for two specs and window 1")
+	}
+	if payload.Summary.TotalFindings == 0 || payload.Summary.HighestSeverity == "" {
+		t.Fatalf("expected populated summary fields, got %+v", payload.Summary)
+	}
+}
+
+func TestRoadmapEntropyCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := setupCLIRoadmapEntropyFixture(t)
+	writeCLIRoadmapEntropySpec(t, root, "base-1", "feature", "auth", "2026-02-01T00:00:00Z", []string{"auth"}, nil)
+	writeCLIRoadmapEntropySpec(t, root, "recent-1", "technical", "infra", "2026-02-02T00:00:00Z", []string{"infra"}, nil)
+	writeCLIRoadmapEntropyLedgerEntry(t, root, canon.LedgerEntry{
+		SpecID:     "base-1",
+		Title:      "base-1",
+		Type:       "feature",
+		Domain:     "auth",
+		Parents:    []string{},
+		Sequence:   1,
+		IngestedAt: "2026-02-01T00:00:00Z",
+	})
+	writeCLIRoadmapEntropyLedgerEntry(t, root, canon.LedgerEntry{
+		SpecID:     "recent-1",
+		Title:      "recent-1",
+		Type:       "technical",
+		Domain:     "infra",
+		Parents:    []string{},
+		Sequence:   2,
+		IngestedAt: "2026-02-02T00:00:00Z",
+	})
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"roadmap-entropy", "--root", root, "--window", "1", "--fail-on", "medium"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected roadmap-entropy to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "roadmap entropy threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: critical") {
+		t.Fatalf("expected output to include critical severity summary, got:\n%s", out)
+	}
+}
+
+func TestRoadmapEntropyCommandBaselineEmptyDoesNotFailThreshold(t *testing.T) {
+	root := setupCLIRoadmapEntropyFixture(t)
+	writeCLIRoadmapEntropySpec(t, root, "recent-1", "technical", "infra", "2026-02-02T00:00:00Z", []string{"infra"}, nil)
+	writeCLIRoadmapEntropyLedgerEntry(t, root, canon.LedgerEntry{
+		SpecID:     "recent-1",
+		Title:      "recent-1",
+		Type:       "technical",
+		Domain:     "infra",
+		Parents:    []string{},
+		Sequence:   1,
+		IngestedAt: "2026-02-02T00:00:00Z",
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"roadmap-entropy", "--root", root, "--window", "8", "--fail-on", "low", "--json"}); err != nil {
+			t.Fatalf("roadmap-entropy command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		InsufficientHistory bool `json:"insufficient_history"`
+		Summary             struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+		ThresholdExceeded bool `json:"threshold_exceeded"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if !payload.InsufficientHistory {
+		t.Fatalf("expected insufficient history for baseline-empty fixture")
+	}
+	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
+		t.Fatalf("expected no findings with baseline-empty fixture, got %+v", payload.Summary)
+	}
+	if payload.ThresholdExceeded {
+		t.Fatalf("did not expect threshold_exceeded with baseline-empty fixture")
+	}
+}
+
+func TestRoadmapEntropyCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"roadmap-entropy", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRoadmapEntropyCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"roadmap-entropy", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for roadmap-entropy positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRoadmapEntropyCommandRejectsInvalidWindow(t *testing.T) {
+	err := run([]string{"roadmap-entropy", "--window", "0"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --window")
+	}
+	if !strings.Contains(err.Error(), "invalid --window") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---
@@ -1317,5 +1478,58 @@ func writeCLISchemaMigrationFile(t *testing.T, root string, relPath string, cont
 	}
 	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing migration fixture: %v", err)
+	}
+}
+
+func setupCLIRoadmapEntropyFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".canon", "specs"), 0o755); err != nil {
+		t.Fatalf("failed creating .canon/specs: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".canon", "ledger"), 0o755); err != nil {
+		t.Fatalf("failed creating .canon/ledger: %v", err)
+	}
+	return root
+}
+
+func writeCLIRoadmapEntropySpec(t *testing.T, root string, id string, specType string, domain string, created string, touchedDomains []string, dependsOn []string) {
+	t.Helper()
+	dependsText := "[]"
+	if len(dependsOn) > 0 {
+		dependsText = "[" + strings.Join(dependsOn, ", ") + "]"
+	}
+	touchedText := "[]"
+	if len(touchedDomains) > 0 {
+		touchedText = "[" + strings.Join(touchedDomains, ", ") + "]"
+	}
+
+	text := `---
+id: ` + id + `
+type: ` + specType + `
+title: "` + id + `"
+domain: ` + domain + `
+created: ` + created + `
+depends_on: ` + dependsText + `
+touched_domains: ` + touchedText + `
+---
+Roadmap entropy fixture spec.
+`
+
+	path := filepath.Join(root, ".canon", "specs", id+".spec.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatalf("failed writing roadmap entropy fixture spec %s: %v", id, err)
+	}
+}
+
+func writeCLIRoadmapEntropyLedgerEntry(t *testing.T, root string, entry canon.LedgerEntry) {
+	t.Helper()
+	data, err := json.MarshalIndent(entry, "", "  ")
+	if err != nil {
+		t.Fatalf("failed marshaling roadmap entropy ledger entry: %v", err)
+	}
+	path := filepath.Join(root, ".canon", "ledger", entry.SpecID+".json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("failed writing roadmap entropy ledger entry %s: %v", entry.SpecID, err)
 	}
 }

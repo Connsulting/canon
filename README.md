@@ -22,6 +22,7 @@ Phase 1 only:
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon schema-evolution`
+- `go run ./cmd/canon roadmap-entropy`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
 
@@ -75,6 +76,13 @@ Schema evolution options:
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
+Roadmap entropy options:
+- `--root <path>` repository root containing `.canon/specs` and `.canon/ledger` (default: `.`)
+- `--window <n>` baseline/recent comparison window size in specs (default: `8`, must be `> 0`)
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+- baseline-empty history windows return a valid result with `highest_severity=none` and no threshold failure
+
 GC options:
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
@@ -94,6 +102,8 @@ go run ./cmd/canon deps-risk --root .
 go run ./cmd/canon deps-risk --root . --fail-on medium
 go run ./cmd/canon schema-evolution --root .
 go run ./cmd/canon schema-evolution --root . --fail-on medium
+go run ./cmd/canon roadmap-entropy --root .
+go run ./cmd/canon roadmap-entropy --root . --window 8 --fail-on medium
 ```
 
 ## Interactive Raw Flow

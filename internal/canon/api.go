@@ -52,3 +52,15 @@ func ParseSchemaEvolutionSeverityForCLI(value string) (SchemaEvolutionSeverity, 
 func SchemaEvolutionExceedsThresholdForCLI(result SchemaEvolutionResult, threshold SchemaEvolutionSeverity) bool {
 	return schemaEvolutionExceedsThreshold(result, threshold)
 }
+
+func RoadmapEntropyForCLI(root string, opts RoadmapEntropyOptions) (RoadmapEntropyResult, error) {
+	return RoadmapEntropy(root, opts)
+}
+
+func ParseRoadmapEntropySeverityForCLI(value string) (RoadmapEntropySeverity, error) {
+	return parseRoadmapEntropySeverity(value)
+}
+
+func RoadmapEntropyExceedsThresholdForCLI(result RoadmapEntropyResult, threshold RoadmapEntropySeverity) bool {
+	return roadmapEntropyExceedsThreshold(result, threshold)
+}

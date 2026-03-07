@@ -227,6 +227,67 @@ type SchemaEvolutionResult struct {
 	ThresholdExceeded  bool                     `json:"threshold_exceeded"`
 }
 
+type RoadmapEntropySeverity string
+
+const (
+	RoadmapEntropySeverityNone     RoadmapEntropySeverity = "none"
+	RoadmapEntropySeverityLow      RoadmapEntropySeverity = "low"
+	RoadmapEntropySeverityMedium   RoadmapEntropySeverity = "medium"
+	RoadmapEntropySeverityHigh     RoadmapEntropySeverity = "high"
+	RoadmapEntropySeverityCritical RoadmapEntropySeverity = "critical"
+)
+
+type RoadmapEntropyOptions struct {
+	Window int
+	FailOn RoadmapEntropySeverity
+}
+
+type RoadmapEntropyFinding struct {
+	RuleID        string                 `json:"rule_id"`
+	Category      string                 `json:"category"`
+	Severity      RoadmapEntropySeverity `json:"severity"`
+	Message       string                 `json:"message"`
+	BaselineCount int                    `json:"baseline_count,omitempty"`
+	RecentCount   int                    `json:"recent_count,omitempty"`
+	BaselineRatio float64                `json:"baseline_ratio,omitempty"`
+	RecentRatio   float64                `json:"recent_ratio,omitempty"`
+	RatioDelta    float64                `json:"ratio_delta,omitempty"`
+	Domains       []string               `json:"domains,omitempty"`
+	SpecIDs       []string               `json:"spec_ids,omitempty"`
+}
+
+type RoadmapEntropyCategoryCounts struct {
+	ScopeCreep int `json:"scope_creep"`
+	Drift      int `json:"drift"`
+}
+
+type RoadmapEntropySeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type RoadmapEntropySummary struct {
+	TotalFindings      int                          `json:"total_findings"`
+	HighestSeverity    RoadmapEntropySeverity       `json:"highest_severity"`
+	FindingsByCategory RoadmapEntropyCategoryCounts `json:"findings_by_category"`
+	FindingsBySeverity RoadmapEntropySeverityCounts `json:"findings_by_severity"`
+}
+
+type RoadmapEntropyResult struct {
+	Root                string                  `json:"root"`
+	Window              int                     `json:"window"`
+	InsufficientHistory bool                    `json:"insufficient_history"`
+	OrderedSpecCount    int                     `json:"ordered_spec_count"`
+	BaselineSpecIDs     []string                `json:"baseline_spec_ids"`
+	RecentSpecIDs       []string                `json:"recent_spec_ids"`
+	Findings            []RoadmapEntropyFinding `json:"findings"`
+	Summary             RoadmapEntropySummary   `json:"summary"`
+	FailOn              RoadmapEntropySeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded   bool                    `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

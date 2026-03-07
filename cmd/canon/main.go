@@ -64,6 +64,8 @@ func run(args []string) error {
 		return cmdDepsRisk(args[1:])
 	case "schema-evolution":
 		return cmdSchemaEvolution(args[1:])
+	case "roadmap-entropy":
+		return cmdRoadmapEntropy(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -726,6 +728,60 @@ func cmdSchemaEvolution(args []string) error {
 	return nil
 }
 
+func cmdRoadmapEntropy(args []string) error {
+	fs := flag.NewFlagSet("roadmap-entropy", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	window := fs.Int("window", 8, "specs per baseline/recent comparison window")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("roadmap-entropy does not accept positional arguments")
+	}
+	if *window <= 0 {
+		return fmt.Errorf("invalid --window %d (must be > 0)", *window)
+	}
+
+	failOn := canon.RoadmapEntropySeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParseRoadmapEntropySeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.RoadmapEntropySeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.RoadmapEntropyForCLI(abs, canon.RoadmapEntropyOptions{
+		Window: *window,
+		FailOn: failOn,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderRoadmapEntropyText(result))
+	}
+
+	if failOn != "" && canon.RoadmapEntropyExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("roadmap entropy threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -816,6 +872,73 @@ func renderSchemaEvolutionText(result canon.SchemaEvolutionResult) string {
 		)
 		if finding.Statement != "" {
 			fmt.Fprintf(&b, "      statement: %s\n", finding.Statement)
+		}
+	}
+	return b.String()
+}
+
+func renderRoadmapEntropyText(result canon.RoadmapEntropyResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "roadmap entropy scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "window: %d\n", result.Window)
+	fmt.Fprintf(&b, "ordered specs: %d\n", result.OrderedSpecCount)
+	fmt.Fprintf(&b, "baseline specs: %d", len(result.BaselineSpecIDs))
+	if len(result.BaselineSpecIDs) > 0 {
+		fmt.Fprintf(&b, " (%s)", strings.Join(result.BaselineSpecIDs, ", "))
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "recent specs: %d", len(result.RecentSpecIDs))
+	if len(result.RecentSpecIDs) > 0 {
+		fmt.Fprintf(&b, " (%s)", strings.Join(result.RecentSpecIDs, ", "))
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "insufficient history: %t\n", result.InsufficientHistory)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	fmt.Fprintf(
+		&b,
+		"category counts: scope-creep=%d drift=%d\n",
+		result.Summary.FindingsByCategory.ScopeCreep,
+		result.Summary.FindingsByCategory.Drift,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+
+	if len(result.Findings) == 0 {
+		b.WriteString("no roadmap entropy findings detected\n")
+		return b.String()
+	}
+
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		fmt.Fprintf(&b, "  - [%s] [%s] %s: %s\n", strings.ToUpper(string(finding.Severity)), finding.Category, finding.RuleID, finding.Message)
+		if finding.BaselineCount != 0 || finding.RecentCount != 0 {
+			fmt.Fprintf(&b, "      counts: baseline=%d recent=%d\n", finding.BaselineCount, finding.RecentCount)
+		}
+		if finding.BaselineRatio != 0 || finding.RecentRatio != 0 || finding.RatioDelta != 0 {
+			fmt.Fprintf(
+				&b,
+				"      ratios: baseline=%.1f%% recent=%.1f%% delta=%.1f%%\n",
+				finding.BaselineRatio*100,
+				finding.RecentRatio*100,
+				finding.RatioDelta*100,
+			)
+		}
+		if len(finding.Domains) > 0 {
+			fmt.Fprintf(&b, "      domains: %s\n", strings.Join(finding.Domains, ", "))
+		}
+		if len(finding.SpecIDs) > 0 {
+			fmt.Fprintf(&b, "      specs: %s\n", strings.Join(finding.SpecIDs, ", "))
 		}
 	}
 	return b.String()
@@ -1053,6 +1176,7 @@ func printUsage() {
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  schema-evolution scan SQL migrations for potentially breaking schema changes")
+	fmt.Println("  roadmap-entropy detect roadmap scope creep and drift from Canon history windows")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
