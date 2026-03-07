@@ -2,11 +2,10 @@ package canon
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -498,34 +497,20 @@ func aiBlameJSONSchema() string {
 }
 
 func parseAIBlameResponse(root string, responseFile string) (aiBlameResponse, error) {
-	path := strings.TrimSpace(responseFile)
-	if path == "" {
-		return aiBlameResponse{}, fmt.Errorf("blame --response-file requires a path")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	b, err := os.ReadFile(path)
+	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
+		if errors.Is(err, errAIResponseFilePathRequired) {
+			return aiBlameResponse{}, fmt.Errorf("blame --response-file requires a path")
+		}
 		return aiBlameResponse{}, err
 	}
 	return decodeAIBlameResponse(b)
 }
 
 func decodeAIBlameResponse(b []byte) (aiBlameResponse, error) {
-	var response aiBlameResponse
-	if err := json.Unmarshal(b, &response); err == nil {
-		return normalizeAIBlameResponse(response), nil
-	}
-	text := strings.TrimSpace(string(b))
-	first := strings.Index(text, "{")
-	last := strings.LastIndex(text, "}")
-	if first == -1 || last == -1 || last <= first {
-		return aiBlameResponse{}, fmt.Errorf("invalid AI blame response JSON")
-	}
-	fragment := text[first : last+1]
-	if err := json.Unmarshal([]byte(fragment), &response); err != nil {
-		return aiBlameResponse{}, fmt.Errorf("invalid AI blame response JSON: %w", err)
+	response, err := decodeAIResponseJSON[aiBlameResponse](b, "invalid AI blame response JSON")
+	if err != nil {
+		return aiBlameResponse{}, err
 	}
 	return normalizeAIBlameResponse(response), nil
 }

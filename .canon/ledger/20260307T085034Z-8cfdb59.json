@@ -1,0 +1,14 @@
+{
+  "spec_id": "8cfdb59",
+  "title": "Auto DRY AI Response Parsing Refactor (Draft)",
+  "type": "feature",
+  "domain": "general",
+  "parents": [
+    "c5e7d91"
+  ],
+  "sequence": 1772873434050677932,
+  "ingested_at": "2026-03-07T08:50:34Z",
+  "content_hash": "0305d45a9b87b1859511d30a31df75d26a6f42a7572500cf2291fb924a13df38",
+  "spec_path": ".canon/specs/8cfdb59.spec.md",
+  "source_path": ".canon/sources/8cfdb59.source.md"
+}

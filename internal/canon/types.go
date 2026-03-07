@@ -181,6 +181,143 @@ type DependencyRiskResult struct {
 	ThresholdExceeded bool                    `json:"threshold_exceeded"`
 }
 
+type SchemaEvolutionSeverity string
+
+const (
+	SchemaEvolutionSeverityNone     SchemaEvolutionSeverity = "none"
+	SchemaEvolutionSeverityLow      SchemaEvolutionSeverity = "low"
+	SchemaEvolutionSeverityMedium   SchemaEvolutionSeverity = "medium"
+	SchemaEvolutionSeverityHigh     SchemaEvolutionSeverity = "high"
+	SchemaEvolutionSeverityCritical SchemaEvolutionSeverity = "critical"
+)
+
+type SchemaEvolutionOptions struct {
+	FailOn SchemaEvolutionSeverity
+}
+
+type SchemaEvolutionFinding struct {
+	RuleID    string                  `json:"rule_id"`
+	Severity  SchemaEvolutionSeverity `json:"severity"`
+	File      string                  `json:"file"`
+	Line      int                     `json:"line"`
+	Statement string                  `json:"statement"`
+	Message   string                  `json:"message"`
+}
+
+type SchemaEvolutionSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type SchemaEvolutionSummary struct {
+	TotalFindings      int                           `json:"total_findings"`
+	HighestSeverity    SchemaEvolutionSeverity       `json:"highest_severity"`
+	FindingsBySeverity SchemaEvolutionSeverityCounts `json:"findings_by_severity"`
+}
+
+type SchemaEvolutionResult struct {
+	Root               string                   `json:"root"`
+	MigrationFileCount int                      `json:"migration_file_count"`
+	StatementCount     int                      `json:"statement_count"`
+	Findings           []SchemaEvolutionFinding `json:"findings"`
+	Summary            SchemaEvolutionSummary   `json:"summary"`
+	FailOn             SchemaEvolutionSeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded  bool                     `json:"threshold_exceeded"`
+}
+
+type SemanticDiffOptions struct {
+	DiffFile     string
+	AIMode       string
+	AIProvider   string
+	ResponseFile string
+}
+
+type SemanticDiffInput struct {
+	Root         string                   `json:"root"`
+	DiffSource   string                   `json:"diff_source"`
+	DiffText     string                   `json:"-"`
+	ChangedFiles []SemanticDiffFileChange `json:"changed_files"`
+}
+
+type SemanticDiffImpact string
+
+const (
+	SemanticDiffImpactNone     SemanticDiffImpact = "none"
+	SemanticDiffImpactLow      SemanticDiffImpact = "low"
+	SemanticDiffImpactMedium   SemanticDiffImpact = "medium"
+	SemanticDiffImpactHigh     SemanticDiffImpact = "high"
+	SemanticDiffImpactCritical SemanticDiffImpact = "critical"
+)
+
+type SemanticDiffFileChange struct {
+	File         string `json:"file"`
+	Status       string `json:"status"`
+	AddedLines   int    `json:"added_lines"`
+	DeletedLines int    `json:"deleted_lines"`
+	HunkCount    int    `json:"hunk_count"`
+}
+
+type SemanticDiffEvidenceKind string
+
+const (
+	SemanticDiffEvidenceKindFile SemanticDiffEvidenceKind = "file"
+	SemanticDiffEvidenceKindHunk SemanticDiffEvidenceKind = "hunk"
+)
+
+type SemanticDiffEvidence struct {
+	File     string                   `json:"file"`
+	Kind     SemanticDiffEvidenceKind `json:"kind"`
+	OldStart int                      `json:"old_start,omitempty"`
+	OldLines int                      `json:"old_lines,omitempty"`
+	NewStart int                      `json:"new_start,omitempty"`
+	NewLines int                      `json:"new_lines,omitempty"`
+}
+
+type SemanticDiffExplanation struct {
+	ID        string                 `json:"id"`
+	Category  string                 `json:"category"`
+	Impact    SemanticDiffImpact     `json:"impact"`
+	Summary   string                 `json:"summary"`
+	Rationale string                 `json:"rationale"`
+	Evidence  []SemanticDiffEvidence `json:"evidence,omitempty"`
+}
+
+type SemanticDiffImpactCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type SemanticDiffCategoryCount struct {
+	Category string `json:"category"`
+	Count    int    `json:"count"`
+}
+
+type SemanticDiffSummary struct {
+	AIModel           string                      `json:"ai_model,omitempty"`
+	AISummary         string                      `json:"ai_summary,omitempty"`
+	TotalExplanations int                         `json:"total_explanations"`
+	HighestImpact     SemanticDiffImpact          `json:"highest_impact"`
+	ImpactCounts      SemanticDiffImpactCounts    `json:"impact_counts"`
+	CategoryCounts    []SemanticDiffCategoryCount `json:"category_counts"`
+}
+
+type SemanticDiffResult struct {
+	Root              string                    `json:"root"`
+	DiffSource        string                    `json:"diff_source"`
+	DiffBytes         int                       `json:"diff_bytes"`
+	ChangedFileCount  int                       `json:"changed_file_count"`
+	TotalAddedLines   int                       `json:"total_added_lines"`
+	TotalDeletedLines int                       `json:"total_deleted_lines"`
+	TotalHunks        int                       `json:"total_hunks"`
+	ChangedFiles      []SemanticDiffFileChange  `json:"changed_files"`
+	Explanations      []SemanticDiffExplanation `json:"explanations"`
+	Summary           SemanticDiffSummary       `json:"summary"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

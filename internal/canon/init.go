@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -1082,35 +1082,18 @@ func aiInitJSONSchema() string {
 }
 
 func parseAIInitResponse(root string, responseFile string) (aiInitResponse, error) {
-	path := strings.TrimSpace(responseFile)
-	if path == "" {
-		return aiInitResponse{}, fmt.Errorf("from-response mode requires --response-file")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	b, err := os.ReadFile(path)
+	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
+		if errors.Is(err, errAIResponseFilePathRequired) {
+			return aiInitResponse{}, fmt.Errorf("from-response mode requires --response-file")
+		}
 		return aiInitResponse{}, err
 	}
 	return decodeAIInitResponse(b)
 }
 
 func decodeAIInitResponse(b []byte) (aiInitResponse, error) {
-	var response aiInitResponse
-	if err := json.Unmarshal(b, &response); err == nil {
-		return response, nil
-	}
-	text := strings.TrimSpace(string(b))
-	first := strings.Index(text, "{")
-	last := strings.LastIndex(text, "}")
-	if first == -1 || last == -1 || last <= first {
-		return aiInitResponse{}, fmt.Errorf("invalid AI init response JSON")
-	}
-	if err := json.Unmarshal([]byte(text[first:last+1]), &response); err != nil {
-		return aiInitResponse{}, fmt.Errorf("invalid AI init response JSON: %w", err)
-	}
-	return response, nil
+	return decodeAIResponseJSON[aiInitResponse](b, "invalid AI init response JSON")
 }
 
 func loadGitignorePatterns(root string) ([]ignorePattern, error) {

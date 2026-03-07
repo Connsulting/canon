@@ -1,11 +1,10 @@
 package canon
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -262,36 +261,18 @@ func ensureAIResponseDefaults(response aiIngestResponse, provisional Spec) aiIng
 }
 
 func parseAIIngestResponse(root string, responseFile string) (aiIngestResponse, error) {
-	path := strings.TrimSpace(responseFile)
-	if path == "" {
-		return aiIngestResponse{}, fmt.Errorf("from-response mode requires --response-file")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
-	}
-	b, err := os.ReadFile(path)
+	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
+		if errors.Is(err, errAIResponseFilePathRequired) {
+			return aiIngestResponse{}, fmt.Errorf("from-response mode requires --response-file")
+		}
 		return aiIngestResponse{}, err
 	}
 	return decodeAIIngestResponse(b)
 }
 
 func decodeAIIngestResponse(b []byte) (aiIngestResponse, error) {
-	var response aiIngestResponse
-	if err := json.Unmarshal(b, &response); err == nil {
-		return response, nil
-	}
-	text := strings.TrimSpace(string(b))
-	first := strings.Index(text, "{")
-	last := strings.LastIndex(text, "}")
-	if first == -1 || last == -1 || last <= first {
-		return aiIngestResponse{}, fmt.Errorf("invalid AI response JSON")
-	}
-	fragment := text[first : last+1]
-	if err := json.Unmarshal([]byte(fragment), &response); err != nil {
-		return aiIngestResponse{}, fmt.Errorf("invalid AI response JSON: %w", err)
-	}
-	return response, nil
+	return decodeAIResponseJSON[aiIngestResponse](b, "invalid AI response JSON")
 }
 
 func canonicalSpecFromAIResponse(response aiIngestResponse, rawText string, input IngestInput, provisional Spec, now time.Time) (Spec, error) {
