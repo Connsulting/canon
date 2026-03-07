@@ -1,0 +1,14 @@
+{
+  "spec_id": "e83d4ab",
+  "title": "Semantic Diff Explainer Iteration 3",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "c5e7d91"
+  ],
+  "sequence": 1772872405737401034,
+  "ingested_at": "2026-03-07T08:33:25Z",
+  "content_hash": "640db4e428ac4693ee07a9887f47599b884f662004ce625c7277b59961afe21f",
+  "spec_path": ".canon/specs/e83d4ab.spec.md",
+  "source_path": ".canon/sources/e83d4ab.source.md"
+}

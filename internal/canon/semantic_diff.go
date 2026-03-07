@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -195,11 +196,17 @@ func parseSemanticDiffChangedFiles(diffText string) []SemanticDiffFileChange {
 			continue
 		case strings.HasPrefix(line, "rename to "):
 			current.Status = "renamed"
-			current.Path = strings.TrimSpace(strings.TrimPrefix(line, "rename to "))
+			path := parseSemanticDiffMetadataPath(strings.TrimPrefix(line, "rename to "))
+			if path != "" {
+				current.Path = path
+			}
 			continue
 		case strings.HasPrefix(line, "rename from "):
 			if strings.TrimSpace(current.Path) == "" {
-				current.Path = strings.TrimSpace(strings.TrimPrefix(line, "rename from "))
+				path := parseSemanticDiffMetadataPath(strings.TrimPrefix(line, "rename from "))
+				if path != "" {
+					current.Path = path
+				}
 			}
 			continue
 		case strings.HasPrefix(line, "+++ "):
@@ -260,12 +267,29 @@ func parseSemanticDiffChangedFiles(diffText string) []SemanticDiffFileChange {
 
 func parseSemanticDiffHeader(line string) *semanticDiffFileAccumulator {
 	out := &semanticDiffFileAccumulator{Status: "modified"}
-	parts := strings.Fields(line)
-	if len(parts) < 4 {
+	const prefix = "diff --git "
+	if !strings.HasPrefix(line, prefix) {
 		return out
 	}
-	oldPath := parseSemanticDiffGitPathToken(parts[2])
-	newPath := parseSemanticDiffGitPathToken(parts[3])
+	rest := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if rest == "" {
+		return out
+	}
+	oldToken, rest, ok := takeSemanticDiffPathToken(rest)
+	if !ok {
+		return out
+	}
+	newToken, _, ok := takeSemanticDiffPathToken(rest)
+	if !ok {
+		oldPath := parseSemanticDiffGitPathToken(oldToken)
+		if oldPath != "" {
+			out.Path = oldPath
+		}
+		return out
+	}
+
+	oldPath := parseSemanticDiffGitPathToken(oldToken)
+	newPath := parseSemanticDiffGitPathToken(newToken)
 	switch {
 	case newPath != "":
 		out.Path = newPath
@@ -276,7 +300,7 @@ func parseSemanticDiffHeader(line string) *semanticDiffFileAccumulator {
 }
 
 func parseSemanticDiffGitPathToken(token string) string {
-	trimmed := strings.TrimSpace(token)
+	trimmed := decodeSemanticDiffPathToken(token)
 	if trimmed == "" || trimmed == "/dev/null" {
 		return ""
 	}
@@ -290,12 +314,74 @@ func parseSemanticDiffPatchPath(token string) string {
 	if trimmed == "" || trimmed == "/dev/null" {
 		return ""
 	}
-	if idx := strings.IndexAny(trimmed, "\t "); idx >= 0 {
-		trimmed = trimmed[:idx]
+	if pathToken, _, ok := takeSemanticDiffPathToken(trimmed); ok {
+		trimmed = pathToken
 	}
-	trimmed = strings.TrimPrefix(trimmed, "a/")
-	trimmed = strings.TrimPrefix(trimmed, "b/")
+	return parseSemanticDiffGitPathToken(trimmed)
+}
+
+func parseSemanticDiffMetadataPath(token string) string {
+	trimmed := decodeSemanticDiffPathToken(token)
+	if trimmed == "" || trimmed == "/dev/null" {
+		return ""
+	}
 	return normalizeSemanticDiffPath(trimmed)
+}
+
+func takeSemanticDiffPathToken(raw string) (token string, remainder string, ok bool) {
+	trimmed := strings.TrimLeft(raw, " \t")
+	if trimmed == "" {
+		return "", "", false
+	}
+
+	if trimmed[0] == '"' {
+		escaped := false
+		for idx := 1; idx < len(trimmed); idx++ {
+			ch := trimmed[idx]
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				return trimmed[:idx+1], trimmed[idx+1:], true
+			}
+		}
+		return trimmed, "", true
+	}
+
+	escaped := false
+	for idx := 0; idx < len(trimmed); idx++ {
+		ch := trimmed[idx]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' {
+			escaped = true
+			continue
+		}
+		if ch == ' ' || ch == '\t' {
+			return trimmed[:idx], trimmed[idx:], true
+		}
+	}
+
+	return trimmed, "", true
+}
+
+func decodeSemanticDiffPathToken(token string) string {
+	trimmed := strings.TrimSpace(token)
+	if len(trimmed) >= 2 && trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"' {
+		if unquoted, err := strconv.Unquote(trimmed); err == nil {
+			trimmed = unquoted
+		} else {
+			trimmed = strings.Trim(trimmed, "\"")
+		}
+	}
+	return trimmed
 }
 
 func normalizeSemanticDiffPath(path string) string {
@@ -635,7 +721,7 @@ func normalizeSemanticDiffExplanations(items []aiSemanticDiffExplanation) []Sema
 		}
 
 		evidence := normalizeSemanticDiffEvidence(item.Evidence)
-		signature := semanticDiffExplanationSignature(category, impact, summary, rationale, evidence)
+		signature := semanticDiffExplanationSignature(category, impact, summary, evidence)
 		if _, ok := seen[signature]; ok {
 			continue
 		}
@@ -729,12 +815,12 @@ func normalizeSemanticDiffEvidence(items []aiSemanticDiffEvidence) []SemanticDif
 	return out
 }
 
-func semanticDiffExplanationSignature(category string, impact SemanticDiffImpact, summary string, rationale string, evidence []SemanticDiffEvidence) string {
+func semanticDiffExplanationSignature(category string, impact SemanticDiffImpact, summary string, evidence []SemanticDiffEvidence) string {
 	evidenceParts := make([]string, 0, len(evidence))
 	for _, item := range evidence {
 		evidenceParts = append(evidenceParts, fmt.Sprintf("%s:%s:%d:%d:%d:%d", item.File, item.Kind, item.OldStart, item.OldLines, item.NewStart, item.NewLines))
 	}
-	return fmt.Sprintf("%s|%s|%s|%s|%s", category, impact, summary, rationale, strings.Join(evidenceParts, ","))
+	return fmt.Sprintf("%s|%s|%s|%s", category, impact, summary, strings.Join(evidenceParts, ","))
 }
 
 func semanticDiffChangeTotals(changes []SemanticDiffFileChange) (int, int, int) {

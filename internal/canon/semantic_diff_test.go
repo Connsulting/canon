@@ -54,7 +54,7 @@ index 0000000..3333333
 				"category":  "security",
 				"impact":    "high",
 				"summary":   "Guest access is now denied.",
-				"rationale": "Authentication policy now enforces explicit access checks.",
+				"rationale": "The gate now routes requests through a stricter code path.",
 				"evidence": []map[string]any{
 					{"file": "app/auth.go", "kind": "hunk", "old_start": 10, "old_lines": 2, "new_start": 10, "new_lines": 3},
 				},
@@ -142,6 +142,19 @@ index 0000000..3333333
 	if result.Explanations[2].Impact != SemanticDiffImpactMedium {
 		t.Fatalf("expected unknown impact to normalize to medium, got %s", result.Explanations[2].Impact)
 	}
+	securityCount := 0
+	for _, explanation := range result.Explanations {
+		if explanation.Category != "security" {
+			continue
+		}
+		securityCount++
+		if explanation.Rationale != "Authentication policy now enforces explicit access checks." {
+			t.Fatalf("expected first security rationale to be retained, got %q", explanation.Rationale)
+		}
+	}
+	if securityCount != 1 {
+		t.Fatalf("expected one deduplicated security explanation, got %d", securityCount)
+	}
 	if !strings.HasPrefix(result.Explanations[2].ID, "exp-") {
 		t.Fatalf("expected generated id prefix exp-, got %q", result.Explanations[2].ID)
 	}
@@ -174,6 +187,36 @@ index 0000000..3333333
 	}
 	if !reflect.DeepEqual(result, again) {
 		t.Fatalf("semantic diff result changed between runs\nfirst=%+v\nsecond=%+v", result, again)
+	}
+}
+
+func TestSemanticDiffChangedFilesParserHandlesPathsWithSpaces(t *testing.T) {
+	diffText := `diff --git "a/app/auth policy.go" "b/app/auth policy.go"
+index 1111111..2222222 100644
+--- "a/app/auth policy.go"
++++ "b/app/auth policy.go"
+@@ -1 +1 @@
+-before
++after
+diff --git "a/db/old policy.sql" "b/db/new policy.sql"
+similarity index 95%
+rename from db/old policy.sql
+rename to db/new policy.sql
+index 3333333..4444444 100644
+--- "a/db/old policy.sql"
++++ "b/db/new policy.sql"
+@@ -1 +1 @@
+-old
++new
+`
+
+	got := parseSemanticDiffChangedFiles(diffText)
+	want := []SemanticDiffFileChange{
+		{File: "app/auth policy.go", Status: "modified", AddedLines: 1, DeletedLines: 1, HunkCount: 1},
+		{File: "db/new policy.sql", Status: "renamed", AddedLines: 1, DeletedLines: 1, HunkCount: 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected parsed changed files:\nwant=%+v\n got=%+v", want, got)
 	}
 }
 
