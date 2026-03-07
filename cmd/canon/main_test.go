@@ -1191,71 +1191,168 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
-func TestSchemaEvolutionCommandJSONOutputShape(t *testing.T) {
+func TestPrivacyCheckCommandSuccessOutput(t *testing.T) {
 	root := t.TempDir()
-	writeCLISchemaMigrationFile(t, root, "db/migrations/001_safe.sql", `CREATE TABLE users (id BIGINT PRIMARY KEY);`)
+	policyPath := writeCLIPrivacyPolicy(t, root, "# Privacy\n\nUser data is deleted on request.")
+	writeCLIPrivacyCodeFixture(t, root)
+	responsePath := writeCLIPrivacyResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"findings": []map[string]any{
+			{
+				"claim_id":          "claim-delete",
+				"claim":             "User data is deleted on request",
+				"status":            "supported",
+				"severity":          "low",
+				"reason":            "Delete handler exists.",
+				"evidence_paths":    []string{"internal/privacy.go"},
+				"evidence_snippets": []string{"DeleteUserData"},
+			},
+		},
+	})
 
 	out := captureStdout(t, func() {
-		if err := run([]string{"schema-evolution", "--root", root, "--json"}); err != nil {
-			t.Fatalf("schema-evolution command failed: %v", err)
+		if err := run([]string{
+			"privacy-check",
+			"--root", root,
+			"--policy-file", policyPath,
+			"--response-file", responsePath,
+		}); err != nil {
+			t.Fatalf("privacy-check command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "privacy policy check:") {
+		t.Fatalf("expected privacy-check header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "findings: 1") {
+		t.Fatalf("expected findings summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "claim-delete") {
+		t.Fatalf("expected finding details, got:\n%s", out)
+	}
+}
+
+func TestPrivacyCheckCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	policyPath := writeCLIPrivacyPolicy(t, root, "# Privacy\n\nPolicy text.")
+	writeCLIPrivacyCodeFixture(t, root)
+	responsePath := writeCLIPrivacyResponse(t, root, map[string]any{
+		"model":    "codex-headless",
+		"findings": []map[string]any{},
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"privacy-check",
+			"--root", root,
+			"--policy-file", policyPath,
+			"--response-file", responsePath,
+			"--json",
+		}); err != nil {
+			t.Fatalf("privacy-check --json failed: %v", err)
 		}
 	})
 
 	var payload struct {
-		MigrationFileCount int `json:"migration_file_count"`
-		StatementCount     int `json:"statement_count"`
-		Summary            struct {
+		PolicyFile string `json:"policy_file"`
+		Summary    struct {
 			TotalFindings   int    `json:"total_findings"`
 			HighestSeverity string `json:"highest_severity"`
 		} `json:"summary"`
 	}
 	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+		t.Fatalf("invalid JSON output: %v\noutput:\n%s", err, out)
 	}
-	if payload.MigrationFileCount != 1 || payload.StatementCount != 1 {
-		t.Fatalf("unexpected migration counts: %+v", payload)
+	if payload.PolicyFile == "" {
+		t.Fatalf("expected policy_file in JSON output")
 	}
 	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
 		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
 	}
 }
 
-func TestSchemaEvolutionCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
-	root := t.TempDir()
-	writeCLISchemaMigrationFile(t, root, "db/migrations/001_breaking.sql", `DROP TABLE users;`)
-
-	var commandErr error
-	out := captureStdout(t, func() {
-		commandErr = run([]string{"schema-evolution", "--root", root, "--fail-on", "medium"})
-	})
-	if commandErr == nil {
-		t.Fatalf("expected schema-evolution to fail when threshold is exceeded")
+func TestPrivacyCheckCommandRequiresPolicyFile(t *testing.T) {
+	err := run([]string{"privacy-check"})
+	if err == nil {
+		t.Fatalf("expected missing policy-file error")
 	}
-	if !strings.Contains(commandErr.Error(), "schema evolution threshold failed") {
-		t.Fatalf("unexpected error: %v", commandErr)
-	}
-	if !strings.Contains(out, "highest severity: high") {
-		t.Fatalf("expected output to include high severity summary, got:\n%s", out)
+	if !strings.Contains(err.Error(), "requires --policy-file") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestSchemaEvolutionCommandRejectsInvalidFailOnSeverity(t *testing.T) {
-	err := run([]string{"schema-evolution", "--fail-on", "urgent"})
+func TestPrivacyCheckCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	root := t.TempDir()
+	policyPath := writeCLIPrivacyPolicy(t, root, "# Privacy\n\nPolicy text.")
+
+	err := run([]string{
+		"privacy-check",
+		"--root", root,
+		"--policy-file", policyPath,
+		"--fail-on", "urgent",
+	})
 	if err == nil {
-		t.Fatalf("expected error for invalid --fail-on severity")
+		t.Fatalf("expected invalid fail-on error")
 	}
 	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestSchemaEvolutionCommandRejectsPositionalArgs(t *testing.T) {
-	err := run([]string{"schema-evolution", "extra"})
+func TestPrivacyCheckCommandRejectsPositionalArgs(t *testing.T) {
+	root := t.TempDir()
+	policyPath := writeCLIPrivacyPolicy(t, root, "# Privacy\n\nPolicy text.")
+	err := run([]string{
+		"privacy-check",
+		"--root", root,
+		"--policy-file", policyPath,
+		"extra",
+	})
 	if err == nil {
-		t.Fatalf("expected error for schema-evolution positional arguments")
+		t.Fatalf("expected positional argument error")
 	}
 	if !strings.Contains(err.Error(), "does not accept positional arguments") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivacyCheckCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	policyPath := writeCLIPrivacyPolicy(t, root, "# Privacy\n\nUser data is deleted on request.")
+	writeCLIPrivacyCodeFixture(t, root)
+	responsePath := writeCLIPrivacyResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"findings": []map[string]any{
+			{
+				"claim_id":          "claim-delete",
+				"claim":             "User data is deleted on request",
+				"status":            "contradicted",
+				"severity":          "high",
+				"reason":            "No delete path exists.",
+				"evidence_paths":    []string{"internal/privacy.go"},
+				"evidence_snippets": []string{"TODO: implement deletion"},
+			},
+		},
+	})
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{
+			"privacy-check",
+			"--root", root,
+			"--policy-file", policyPath,
+			"--response-file", responsePath,
+			"--fail-on", "medium",
+		})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected privacy-check to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "privacy policy threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") {
+		t.Fatalf("expected output to include highest severity summary, got:\n%s", out)
 	}
 }
 
@@ -1309,13 +1406,39 @@ func writeCLIGoMod(t *testing.T, root string, content string) {
 	}
 }
 
-func writeCLISchemaMigrationFile(t *testing.T, root string, relPath string, content string) {
+func writeCLIPrivacyPolicy(t *testing.T, root string, body string) string {
 	t.Helper()
-	absPath := filepath.Join(root, filepath.FromSlash(relPath))
-	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-		t.Fatalf("failed creating migration directory: %v", err)
+	path := filepath.Join(root, "docs", "privacy-policy.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("failed creating policy directory: %v", err)
 	}
-	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
-		t.Fatalf("failed writing migration fixture: %v", err)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("failed writing privacy policy fixture: %v", err)
 	}
+	return path
+}
+
+func writeCLIPrivacyCodeFixture(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "internal", "privacy.go")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("failed creating code fixture directory: %v", err)
+	}
+	content := "package internal\n\nfunc DeleteUserData() {}\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed writing code fixture: %v", err)
+	}
+}
+
+func writeCLIPrivacyResponse(t *testing.T, root string, payload map[string]any) string {
+	t.Helper()
+	path := filepath.Join(root, "privacy-check-response.json")
+	b, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatalf("failed marshaling privacy response: %v", err)
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatalf("failed writing privacy response: %v", err)
+	}
+	return path
 }

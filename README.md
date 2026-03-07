@@ -21,7 +21,7 @@ Phase 1 only:
 - `go run ./cmd/canon render --write`
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
-- `go run ./cmd/canon schema-evolution`
+- `go run ./cmd/canon privacy-check`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
 
@@ -70,9 +70,16 @@ Dependency risk options:
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
-Schema evolution options:
-- `--root <path>` repository root containing SQL migration files (default: `.`)
-- `--json` emit machine-readable JSON findings and summary
+Privacy-check options:
+- `--root <path>` repository root (default: `.`)
+- `--policy-file <path>` required local privacy policy file
+- `--code-path <path>` scope analysis to one or more paths (repeatable)
+- `--context-limit <kb>` max code context size in KB (default: `120`)
+- `--max-file-bytes <n>` max bytes per scanned file (default: `65536`)
+- `--ai auto|from-response` AI adjudication mode (default: `auto`)
+- `--ai-provider codex|claude` override configured provider
+- `--response-file <path>` deterministic AI response JSON for `from-response`
+- `--json` emit machine-readable JSON findings
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
 GC options:
@@ -92,8 +99,8 @@ go run ./cmd/canon log --graph --oneline --all --date relative --color always -n
 go run ./cmd/canon blame "graph mode must use semantic dependencies from canonical specs"
 go run ./cmd/canon deps-risk --root .
 go run ./cmd/canon deps-risk --root . --fail-on medium
-go run ./cmd/canon schema-evolution --root .
-go run ./cmd/canon schema-evolution --root . --fail-on medium
+go run ./cmd/canon privacy-check --root . --policy-file ./docs/privacy-policy.md --code-path internal --response-file ./testdata/privacy-check-response.json
+go run ./cmd/canon privacy-check --root . --policy-file ./docs/privacy-policy.md --fail-on medium
 ```
 
 ## Interactive Raw Flow

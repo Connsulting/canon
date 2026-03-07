@@ -181,50 +181,78 @@ type DependencyRiskResult struct {
 	ThresholdExceeded bool                    `json:"threshold_exceeded"`
 }
 
-type SchemaEvolutionSeverity string
+type PrivacyPolicyFindingStatus string
 
 const (
-	SchemaEvolutionSeverityNone     SchemaEvolutionSeverity = "none"
-	SchemaEvolutionSeverityLow      SchemaEvolutionSeverity = "low"
-	SchemaEvolutionSeverityMedium   SchemaEvolutionSeverity = "medium"
-	SchemaEvolutionSeverityHigh     SchemaEvolutionSeverity = "high"
-	SchemaEvolutionSeverityCritical SchemaEvolutionSeverity = "critical"
+	PrivacyPolicyFindingStatusSupported    PrivacyPolicyFindingStatus = "supported"
+	PrivacyPolicyFindingStatusContradicted PrivacyPolicyFindingStatus = "contradicted"
+	PrivacyPolicyFindingStatusUnverifiable PrivacyPolicyFindingStatus = "unverifiable"
 )
 
-type SchemaEvolutionOptions struct {
-	FailOn SchemaEvolutionSeverity
+type PrivacyPolicySeverity string
+
+const (
+	PrivacyPolicySeverityNone     PrivacyPolicySeverity = "none"
+	PrivacyPolicySeverityLow      PrivacyPolicySeverity = "low"
+	PrivacyPolicySeverityMedium   PrivacyPolicySeverity = "medium"
+	PrivacyPolicySeverityHigh     PrivacyPolicySeverity = "high"
+	PrivacyPolicySeverityCritical PrivacyPolicySeverity = "critical"
+)
+
+type PrivacyPolicyCheckOptions struct {
+	PolicyFile   string
+	CodePaths    []string
+	ContextLimit int
+	MaxFileBytes int64
+	AIMode       string
+	AIProvider   string
+	ResponseFile string
+	FailOn       PrivacyPolicySeverity
 }
 
-type SchemaEvolutionFinding struct {
-	RuleID    string                  `json:"rule_id"`
-	Severity  SchemaEvolutionSeverity `json:"severity"`
-	File      string                  `json:"file"`
-	Line      int                     `json:"line"`
-	Statement string                  `json:"statement"`
-	Message   string                  `json:"message"`
+type PrivacyPolicyFinding struct {
+	ClaimID          string                     `json:"claim_id"`
+	Claim            string                     `json:"claim"`
+	Status           PrivacyPolicyFindingStatus `json:"status"`
+	Severity         PrivacyPolicySeverity      `json:"severity"`
+	Reason           string                     `json:"reason"`
+	EvidencePaths    []string                   `json:"evidence_paths,omitempty"`
+	EvidenceSnippets []string                   `json:"evidence_snippets,omitempty"`
 }
 
-type SchemaEvolutionSeverityCounts struct {
+type PrivacyPolicyStatusCounts struct {
+	Supported    int `json:"supported"`
+	Contradicted int `json:"contradicted"`
+	Unverifiable int `json:"unverifiable"`
+}
+
+type PrivacyPolicySeverityCounts struct {
 	Low      int `json:"low"`
 	Medium   int `json:"medium"`
 	High     int `json:"high"`
 	Critical int `json:"critical"`
 }
 
-type SchemaEvolutionSummary struct {
-	TotalFindings      int                           `json:"total_findings"`
-	HighestSeverity    SchemaEvolutionSeverity       `json:"highest_severity"`
-	FindingsBySeverity SchemaEvolutionSeverityCounts `json:"findings_by_severity"`
+type PrivacyPolicySummary struct {
+	TotalFindings      int                         `json:"total_findings"`
+	HighestSeverity    PrivacyPolicySeverity       `json:"highest_severity"`
+	FindingsByStatus   PrivacyPolicyStatusCounts   `json:"findings_by_status"`
+	FindingsBySeverity PrivacyPolicySeverityCounts `json:"findings_by_severity"`
 }
 
-type SchemaEvolutionResult struct {
-	Root               string                   `json:"root"`
-	MigrationFileCount int                      `json:"migration_file_count"`
-	StatementCount     int                      `json:"statement_count"`
-	Findings           []SchemaEvolutionFinding `json:"findings"`
-	Summary            SchemaEvolutionSummary   `json:"summary"`
-	FailOn             SchemaEvolutionSeverity  `json:"fail_on,omitempty"`
-	ThresholdExceeded  bool                     `json:"threshold_exceeded"`
+type PrivacyPolicyCheckResult struct {
+	Root              string                 `json:"root"`
+	PolicyFile        string                 `json:"policy_file"`
+	CodePaths         []string               `json:"code_paths,omitempty"`
+	ScannedFiles      int                    `json:"scanned_files"`
+	ContextFiles      int                    `json:"context_files"`
+	ContextBytes      int                    `json:"context_bytes"`
+	ContextLimitBytes int                    `json:"context_limit_bytes"`
+	MaxFileBytes      int64                  `json:"max_file_bytes"`
+	Findings          []PrivacyPolicyFinding `json:"findings"`
+	Summary           PrivacyPolicySummary   `json:"summary"`
+	FailOn            PrivacyPolicySeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                   `json:"threshold_exceeded"`
 }
 
 type Index struct {

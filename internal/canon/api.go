@@ -41,14 +41,14 @@ func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold
 	return dependencyRiskExceedsThreshold(result, threshold)
 }
 
-func SchemaEvolutionForCLI(root string, opts SchemaEvolutionOptions) (SchemaEvolutionResult, error) {
-	return SchemaEvolution(root, opts)
+func PrivacyPolicyCheckForCLI(root string, opts PrivacyPolicyCheckOptions) (PrivacyPolicyCheckResult, error) {
+	return PrivacyPolicyCheck(root, opts)
 }
 
-func ParseSchemaEvolutionSeverityForCLI(value string) (SchemaEvolutionSeverity, error) {
-	return parseSchemaEvolutionSeverity(value)
+func ParsePrivacyPolicySeverityForCLI(value string) (PrivacyPolicySeverity, error) {
+	return parsePrivacyPolicySeverity(value)
 }
 
-func SchemaEvolutionExceedsThresholdForCLI(result SchemaEvolutionResult, threshold SchemaEvolutionSeverity) bool {
-	return schemaEvolutionExceedsThreshold(result, threshold)
+func PrivacyPolicyExceedsThresholdForCLI(result PrivacyPolicyCheckResult, threshold PrivacyPolicySeverity) bool {
+	return privacyPolicyExceedsThreshold(result, threshold)
 }
