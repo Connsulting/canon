@@ -1,0 +1,14 @@
+{
+  "spec_id": "2f7d4c9",
+  "title": "TD Review Session 2026-03-07: Zero-Backlog Outcome",
+  "type": "resolution",
+  "domain": "td-review",
+  "parents": [
+    "4e9a21f"
+  ],
+  "sequence": 1772869467179829097,
+  "ingested_at": "2026-03-07T07:44:27Z",
+  "content_hash": "7631957e48f9f00fee3ee8226b87d31fd90ede62fd2cb523b9fb1f0e8bb10022",
+  "spec_path": ".canon/specs/2f7d4c9.spec.md",
+  "source_path": ".canon/sources/2f7d4c9.source.md"
+}
