@@ -1191,6 +1191,101 @@ func TestDepsRiskCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestMetricsCoverageCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	writeCLIGoFile(t, root, "cmd/canon/main.go", `package main
+
+func cmdPing(args []string) error {
+	telemetry.EmitMetric("cmd.ping")
+	return nil
+}
+
+func cmdStatus(args []string) error {
+	return nil
+}
+`)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"metrics-coverage", "--root", root, "--json"}); err != nil {
+			t.Fatalf("metrics-coverage command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		MissingTargets []string `json:"missing_targets"`
+		Summary        struct {
+			TargetCount       int     `json:"target_count"`
+			InstrumentedCount int     `json:"instrumented_count"`
+			MissingCount      int     `json:"missing_count"`
+			CoveragePercent   float64 `json:"coverage_percent"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.Summary.TargetCount != 2 || payload.Summary.InstrumentedCount != 1 || payload.Summary.MissingCount != 1 {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+	if payload.Summary.CoveragePercent != 50 {
+		t.Fatalf("expected 50%% coverage, got %.2f", payload.Summary.CoveragePercent)
+	}
+	if len(payload.MissingTargets) != 1 || !strings.Contains(payload.MissingTargets[0], "cmdStatus") {
+		t.Fatalf("unexpected missing_targets payload: %+v", payload.MissingTargets)
+	}
+}
+
+func TestMetricsCoverageCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	writeCLIGoFile(t, root, "cmd/canon/main.go", `package main
+
+func cmdOne(args []string) error {
+	metrics.Record("cmd.one")
+	return nil
+}
+
+func cmdTwo(args []string) error {
+	return nil
+}
+`)
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"metrics-coverage", "--root", root, "--fail-under", "80"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected metrics-coverage to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "metrics coverage threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "coverage: 50.00%") {
+		t.Fatalf("expected output to include coverage summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "fail-under: 80.00% (exceeded=true)") {
+		t.Fatalf("expected output to include threshold detail, got:\n%s", out)
+	}
+}
+
+func TestMetricsCoverageCommandRejectsInvalidFailUnder(t *testing.T) {
+	err := run([]string{"metrics-coverage", "--fail-under", "101"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-under")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-under value") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMetricsCoverageCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"metrics-coverage", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for metrics-coverage positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---
@@ -1238,5 +1333,16 @@ func writeCLIGoMod(t *testing.T, root string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing go.mod fixture: %v", err)
+	}
+}
+
+func writeCLIGoFile(t *testing.T, root string, relPath string, content string) {
+	t.Helper()
+	path := filepath.Join(root, relPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("failed creating parent directory for %s: %v", relPath, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed writing Go fixture %s: %v", relPath, err)
 	}
 }

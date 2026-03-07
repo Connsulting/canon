@@ -40,3 +40,15 @@ func ParseDependencyRiskSeverityForCLI(value string) (DependencyRiskSeverity, er
 func DependencyRiskExceedsThresholdForCLI(result DependencyRiskResult, threshold DependencyRiskSeverity) bool {
 	return dependencyRiskExceedsThreshold(result, threshold)
 }
+
+func MetricsCoverageForCLI(root string, opts MetricsCoverageOptions) (MetricsCoverageResult, error) {
+	return MetricsCoverage(root, opts)
+}
+
+func ParseMetricsCoverageFailUnderForCLI(value string) (float64, error) {
+	return parseMetricsCoverageFailUnder(value)
+}
+
+func MetricsCoverageExceedsThresholdForCLI(result MetricsCoverageResult, threshold float64) bool {
+	return metricsCoverageExceedsThreshold(result, threshold)
+}

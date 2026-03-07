@@ -1,0 +1,14 @@
+{
+  "spec_id": "5e7a9c3",
+  "title": "Metrics Coverage Analyzer",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "9ad4f11"
+  ],
+  "sequence": 1772873613231604059,
+  "ingested_at": "2026-03-07T08:53:33Z",
+  "content_hash": "53a7067c77640d7d5f088d583c7d8e06ea17a27c25e7374ba115d66789d242da",
+  "spec_path": ".canon/specs/5e7a9c3.spec.md",
+  "source_path": ".canon/sources/5e7a9c3.source.md"
+}

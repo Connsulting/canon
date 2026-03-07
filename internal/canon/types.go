@@ -181,6 +181,34 @@ type DependencyRiskResult struct {
 	ThresholdExceeded bool                    `json:"threshold_exceeded"`
 }
 
+type MetricsCoverageOptions struct {
+	FailUnder *float64
+}
+
+type MetricsCoverageFinding struct {
+	Handler      string   `json:"handler"`
+	File         string   `json:"file"`
+	Line         int      `json:"line"`
+	Instrumented bool     `json:"instrumented"`
+	MatchedCalls []string `json:"matched_calls,omitempty"`
+}
+
+type MetricsCoverageSummary struct {
+	TargetCount       int     `json:"target_count"`
+	InstrumentedCount int     `json:"instrumented_count"`
+	MissingCount      int     `json:"missing_count"`
+	CoveragePercent   float64 `json:"coverage_percent"`
+}
+
+type MetricsCoverageResult struct {
+	Root              string                   `json:"root"`
+	Findings          []MetricsCoverageFinding `json:"findings"`
+	MissingTargets    []string                 `json:"missing_targets"`
+	Summary           MetricsCoverageSummary   `json:"summary"`
+	FailUnder         *float64                 `json:"fail_under,omitempty"`
+	ThresholdExceeded bool                     `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

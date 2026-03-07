@@ -62,6 +62,8 @@ func run(args []string) error {
 		return cmdBlame(args[1:])
 	case "deps-risk":
 		return cmdDepsRisk(args[1:])
+	case "metrics-coverage":
+		return cmdMetricsCoverage(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -675,6 +677,55 @@ func cmdDepsRisk(args []string) error {
 	return nil
 }
 
+func cmdMetricsCoverage(args []string) error {
+	fs := flag.NewFlagSet("metrics-coverage", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failUnderFlag := fs.String("fail-under", "", "fail when coverage percent is below threshold [0..100]")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("metrics-coverage does not accept positional arguments")
+	}
+
+	var failUnder *float64
+	if strings.TrimSpace(*failUnderFlag) != "" {
+		parsed, err := canon.ParseMetricsCoverageFailUnderForCLI(*failUnderFlag)
+		if err != nil {
+			return fmt.Errorf("invalid --fail-under value %q (expected number between 0 and 100)", strings.TrimSpace(*failUnderFlag))
+		}
+		failUnder = &parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.MetricsCoverageForCLI(abs, canon.MetricsCoverageOptions{
+		FailUnder: failUnder,
+	})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderMetricsCoverageText(result))
+	}
+
+	if failUnder != nil && canon.MetricsCoverageExceedsThresholdForCLI(result, *failUnder) {
+		return fmt.Errorf("metrics coverage threshold failed: coverage=%.2f fail-under=%.2f", result.Summary.CoveragePercent, *failUnder)
+	}
+	return nil
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -723,6 +774,34 @@ func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 			fmt.Fprintf(&b, " (%s)", strings.Join(details, ", "))
 		}
 		fmt.Fprintf(&b, ": %s\n", finding.Message)
+	}
+	return b.String()
+}
+
+func renderMetricsCoverageText(result canon.MetricsCoverageResult) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "metrics coverage scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "handler targets: %d\n", result.Summary.TargetCount)
+	fmt.Fprintf(&b, "instrumented: %d\n", result.Summary.InstrumentedCount)
+	fmt.Fprintf(&b, "missing: %d\n", result.Summary.MissingCount)
+	fmt.Fprintf(&b, "coverage: %.2f%%\n", result.Summary.CoveragePercent)
+	if result.FailUnder != nil {
+		fmt.Fprintf(&b, "fail-under: %.2f%% (exceeded=%t)\n", *result.FailUnder, result.ThresholdExceeded)
+	}
+
+	if result.Summary.TargetCount == 0 {
+		b.WriteString("no matching CLI command handlers found\n")
+		return b.String()
+	}
+	if len(result.MissingTargets) == 0 {
+		b.WriteString("all matched handlers are instrumented\n")
+		return b.String()
+	}
+
+	b.WriteString("missing handlers:\n")
+	for _, target := range result.MissingTargets {
+		fmt.Fprintf(&b, "  - %s\n", target)
 	}
 	return b.String()
 }
@@ -958,6 +1037,7 @@ func printUsage() {
 	fmt.Println("  gc      consolidate and archive specs with optional AI pass")
 	fmt.Println("  blame   trace a behavior back to its canonical spec requirements")
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
+	fmt.Println("  metrics-coverage analyze static metrics instrumentation coverage in Go CLI handlers")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
