@@ -52,6 +52,12 @@ Blame options:
 - `--ai-provider codex|claude` override configured provider
 - `--response-file <path>` use precomputed AI response JSON
 
+Blame JSON contract:
+- Top-level keys: `query`, `found`, `results` (omitted when empty).
+- Result keys: `spec_id`, `title`, `domain`, `confidence`, `created`, `relevant_lines`.
+- Invalid flags fail with non-zero exit.
+- Missing behavior query fails with non-zero exit.
+
 Blame defaults:
 - `canon blame "<text>"` uses current directory as root
 - output defaults to human readable terminal text
@@ -65,15 +71,35 @@ Check options:
 - `--json` emit machine-readable JSON
 - `--write` persist conflict reports under `.canon/conflict-reports/`
 
+Check JSON contract:
+- Keys: `passed`, `total_specs`, `total_conflicts`, `conflicts`, optional `report_paths`.
+- Conflict records include: `spec_a`, `title_a`, `spec_b`, `title_b`, `domain`, `statement_key`, `line_a`, `line_b`.
+- Positional arguments are rejected.
+- When conflicts exist, the command still emits JSON but exits non-zero.
+
 Dependency risk options:
 - `--root <path>` repository root containing `go.mod` (default: `.`)
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
+Dependency risk JSON contract:
+- Keys: `root`, `go_mod_path`, `go_sum_path`, `go_sum_present`, `dependency_count`, `findings`, `summary`, `threshold_exceeded`, optional `fail_on`.
+- Summary keys: `total_findings`, `security_findings`, `maintenance_findings`, `highest_severity`, `findings_by_severity`.
+- Positional arguments are rejected.
+- Invalid `--fail-on` values are rejected.
+- When threshold is exceeded, the command still emits JSON but exits non-zero.
+
 Schema evolution options:
 - `--root <path>` repository root containing SQL migration files (default: `.`)
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+
+Schema evolution JSON contract:
+- Keys: `root`, `migration_file_count`, `statement_count`, `findings`, `summary`, `threshold_exceeded`, optional `fail_on`.
+- Summary keys: `total_findings`, `highest_severity`, `findings_by_severity`.
+- Positional arguments are rejected.
+- Invalid `--fail-on` values are rejected.
+- When threshold is exceeded, the command still emits JSON but exits non-zero.
 
 GC options:
 - `--domain <name>` consolidate all specs in one domain
