@@ -1,31 +1,144 @@
 specs:
-  canon-mvp-phase1:
+  4e9a21f:
+    title: "Schema Evolution Advisor"
+    type: technical
+    domain: database
+    touches: [database]
+    depends_on: [9ad4f11]
+    depended_on_by: [c5e7d91]
+  7c4d2e1:
+    title: "Lint and Style Compliance Cleanup for Go CLI"
+    type: technical
+    domain: canon-cli
+    touches: [canon-cli, ingest]
+    depends_on: [8e6a1d2, e1bcd34]
+    depended_on_by: [9ad4f11]
+  8e6a1d2:
+    title: "Init Symlink Scan Stability"
+    type: technical
+    domain: init
+    touches: [canon-cli, init]
+    depends_on: [a1e9c10, a94f2c1]
+    depended_on_by: [7c4d2e1]
+  9ad4f11:
+    title: "Go Dependency Risk Scanner"
+    type: technical
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [7c4d2e1]
+    depended_on_by: [4e9a21f]
+  a1e9c10:
+    title: "Executable Release Automation"
+    type: technical
+    domain: release
+    touches: [release]
+    depends_on: [a94f2c1]
+    depended_on_by: [8e6a1d2]
+  a94f2c1:
+    title: "Canon Init: AI-Powered Project Initialization"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli, config, ingest]
+    depends_on: [b3f2d9c, e1bcd34]
+    depended_on_by: [8e6a1d2, a1e9c10]
+  b3f2d9c:
+    title: "Canon Log Graph Readability Alignment"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [c0d3f0f, d72f3b8]
+    depended_on_by: [a94f2c1]
+  b98ed16:
+    title: "AI Render Effective State Compression"
+    type: technical
+    domain: state-render
+    touches: [canon-cli, ingest, state-render]
+    depends_on: [e1bcd34]
+    depended_on_by: [c0d3f0f, e2cc388]
+  c0d3f0f:
+    title: "Canon GC"
+    type: feature
+    domain: tools
+    touches: [canon-cli, ingest, ledger, state-render, tools]
+    depends_on: [b98ed16, e1bcd34, f3c2d71]
+    depended_on_by: [b3f2d9c]
+  c5e7d91:
+    title: "Semantic Diff Explainer"
+    type: technical
+    domain: canon-cli
+    touches: [ai-runtime, canon-cli]
+    depends_on: [4e9a21f]
+    depended_on_by: []
+  c9f6a10:
+    title: "Canon Reset"
+    type: technical
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [e2cc388]
+    depended_on_by: [d72f3b8, f3c2d71]
+  d72f3b8:
+    title: "Canon Blame for Behavioral Provenance"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli, config, ingest]
+    depends_on: [c9f6a10, e1bcd34]
+    depended_on_by: [b3f2d9c]
+  e1bcd34:
     title: "Canon MVP Phase 1: Spec Ingest and Deterministic State Render"
     type: technical
     domain: canon-cli
     touches: [canon-cli, config, ingest, ledger, state-render]
     depends_on: []
-    depended_on_by: [canon-render-effective-state-v1]
-  canon-render-effective-state-v1:
-    title: "AI Render Effective State Compression"
+    depended_on_by: [7c4d2e1, a94f2c1, b98ed16, c0d3f0f, d72f3b8, f3c2d71]
+  e2cc388:
+    title: "Canon Log Dependency Graph and Git-Style Filters"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [b98ed16]
+    depended_on_by: [c9f6a10]
+  f3c2d71:
+    title: "Add canon check for post merge semantic contradiction scans"
     type: technical
-    domain: state-render
-    touches: [canon-cli, ingest, state-render]
-    depends_on: [canon-mvp-phase1]
-    depended_on_by: []
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [c9f6a10, e1bcd34]
+    depended_on_by: [c0d3f0f]
 domains:
+  ai-runtime:
+    specs: [c5e7d91]
   canon-cli:
-    specs: [canon-mvp-phase1, canon-render-effective-state-v1]
+    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
   config:
-    specs: [canon-mvp-phase1]
+    specs: [a94f2c1, d72f3b8, e1bcd34]
+  database:
+    specs: [4e9a21f]
   ingest:
-    specs: [canon-mvp-phase1, canon-render-effective-state-v1]
+    specs: [7c4d2e1, a94f2c1, b98ed16, c0d3f0f, d72f3b8, e1bcd34]
+  init:
+    specs: [8e6a1d2]
   ledger:
-    specs: [canon-mvp-phase1]
+    specs: [c0d3f0f, e1bcd34]
+  release:
+    specs: [a1e9c10]
   state-render:
-    specs: [canon-mvp-phase1, canon-render-effective-state-v1]
+    specs: [b98ed16, c0d3f0f, e1bcd34]
+  tools:
+    specs: [c0d3f0f]
 cross_domain_edges:
-  - spec: canon-mvp-phase1
-    domains: [canon-cli, config, ingest, ledger, state-render]
-  - spec: canon-render-effective-state-v1
+  - spec: 7c4d2e1
+    domains: [canon-cli, ingest]
+  - spec: 8e6a1d2
+    domains: [canon-cli, init]
+  - spec: a94f2c1
+    domains: [canon-cli, config, ingest]
+  - spec: b98ed16
     domains: [canon-cli, ingest, state-render]
+  - spec: c0d3f0f
+    domains: [canon-cli, ingest, ledger, state-render, tools]
+  - spec: c5e7d91
+    domains: [ai-runtime, canon-cli]
+  - spec: d72f3b8
+    domains: [canon-cli, config, ingest]
+  - spec: e1bcd34
+    domains: [canon-cli, config, ingest, ledger, state-render]

@@ -1259,6 +1259,181 @@ func TestSchemaEvolutionCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestSemanticDiffCommandTextOutputWithResponseFile(t *testing.T) {
+	root := t.TempDir()
+	diffPath := writeCLISemanticDiffFixtureDiff(t, root, `diff --git a/app/auth.go b/app/auth.go
+index 1111111..2222222 100644
+--- a/app/auth.go
++++ b/app/auth.go
+@@ -1 +1,2 @@
+-allowGuest := true
++allowGuest := false
++requireMFA := true
+`)
+	responsePath := writeCLISemanticDiffResponse(t, root, map[string]any{
+		"model":   "codex-headless",
+		"summary": "Auth behavior tightened.",
+		"explanations": []map[string]any{
+			{
+				"id":        "auth-tighten",
+				"category":  "security",
+				"impact":    "high",
+				"summary":   "Guest traffic now requires stronger checks.",
+				"rationale": "Access gates changed from permissive to strict behavior.",
+				"evidence": []map[string]any{
+					{"file": "app/auth.go", "kind": "hunk", "old_start": 1, "old_lines": 1, "new_start": 1, "new_lines": 2},
+				},
+			},
+		},
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"semantic-diff",
+			"--root", root,
+			"--diff-file", diffPath,
+			"--response-file", responsePath,
+		}); err != nil {
+			t.Fatalf("semantic-diff command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "semantic diff scan:") {
+		t.Fatalf("expected semantic diff heading, got:\n%s", out)
+	}
+	if !strings.Contains(out, "highest impact: high") {
+		t.Fatalf("expected highest impact summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "auth-tighten") {
+		t.Fatalf("expected explanation id in output, got:\n%s", out)
+	}
+}
+
+func TestSemanticDiffCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	diffPath := writeCLISemanticDiffFixtureDiff(t, root, `diff --git a/db/migrations/001.sql b/db/migrations/001.sql
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/db/migrations/001.sql
+@@ -0,0 +1,2 @@
++ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE;
++UPDATE users SET mfa_enabled = FALSE;
+`)
+	responsePath := writeCLISemanticDiffResponse(t, root, map[string]any{
+		"model":   "codex-headless",
+		"summary": "Schema behavior changes.",
+		"explanations": []map[string]any{
+			{
+				"id":        "schema-impact",
+				"category":  "data",
+				"impact":    "critical",
+				"summary":   "Writes now require the new column behavior.",
+				"rationale": "A non-null column becomes part of insert/update expectations.",
+				"evidence": []map[string]any{
+					{"file": "db/migrations/001.sql", "kind": "hunk", "old_start": 0, "old_lines": 0, "new_start": 1, "new_lines": 2},
+				},
+			},
+		},
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"semantic-diff",
+			"--root", root,
+			"--diff-file", diffPath,
+			"--response-file", responsePath,
+			"--json",
+		}); err != nil {
+			t.Fatalf("semantic-diff --json command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		ChangedFileCount int `json:"changed_file_count"`
+		TotalAddedLines  int `json:"total_added_lines"`
+		Summary          struct {
+			TotalExplanations int    `json:"total_explanations"`
+			HighestImpact     string `json:"highest_impact"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("semantic-diff JSON output invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.ChangedFileCount != 1 || payload.TotalAddedLines != 2 {
+		t.Fatalf("unexpected changed file stats: %+v", payload)
+	}
+	if payload.Summary.TotalExplanations != 1 || payload.Summary.HighestImpact != "critical" {
+		t.Fatalf("unexpected semantic summary payload: %+v", payload.Summary)
+	}
+}
+
+func TestSemanticDiffCommandRejectsInvalidAIMode(t *testing.T) {
+	err := run([]string{"semantic-diff", "--ai", "invalid"})
+	if err == nil {
+		t.Fatalf("expected invalid ai mode error")
+	}
+	if !strings.Contains(err.Error(), "invalid --ai mode") {
+		t.Fatalf("unexpected invalid ai mode error: %v", err)
+	}
+}
+
+func TestSemanticDiffCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"semantic-diff", "extra"})
+	if err == nil {
+		t.Fatalf("expected semantic-diff positional argument error")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected positional arg error: %v", err)
+	}
+}
+
+func TestSemanticDiffCommandRejectsMissingResponseFileInFromResponseMode(t *testing.T) {
+	root := t.TempDir()
+	diffPath := writeCLISemanticDiffFixtureDiff(t, root, `diff --git a/a.txt b/a.txt
+index 1111111..2222222 100644
+--- a/a.txt
++++ b/a.txt
+@@ -1 +1 @@
+-old
++new
+`)
+
+	err := run([]string{
+		"semantic-diff",
+		"--root", root,
+		"--diff-file", diffPath,
+		"--ai", "from-response",
+	})
+	if err == nil {
+		t.Fatalf("expected missing response-file error")
+	}
+	if !strings.Contains(err.Error(), "requires --response-file") {
+		t.Fatalf("unexpected missing response-file error: %v", err)
+	}
+}
+
+func TestSemanticDiffCommandRejectsInvalidDiffFilePath(t *testing.T) {
+	root := t.TempDir()
+	responsePath := writeCLISemanticDiffResponse(t, root, map[string]any{
+		"model":        "codex-headless",
+		"summary":      "summary",
+		"explanations": []map[string]any{},
+	})
+	err := run([]string{
+		"semantic-diff",
+		"--root", root,
+		"--diff-file", "missing.diff",
+		"--response-file", responsePath,
+	})
+	if err == nil {
+		t.Fatalf("expected missing diff-file error")
+	}
+	if !strings.Contains(err.Error(), "no such file or directory") {
+		t.Fatalf("unexpected diff-file error: %v", err)
+	}
+}
+
 func writeCLICheckSpec(t *testing.T, root string, id string, title string, domain string, body string) {
 	t.Helper()
 	text := `---
@@ -1318,4 +1493,26 @@ func writeCLISchemaMigrationFile(t *testing.T, root string, relPath string, cont
 	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing migration fixture: %v", err)
 	}
+}
+
+func writeCLISemanticDiffFixtureDiff(t *testing.T, root string, diff string) string {
+	t.Helper()
+	path := filepath.Join(root, "semantic-fixture.diff")
+	if err := os.WriteFile(path, []byte(diff), 0o644); err != nil {
+		t.Fatalf("failed writing semantic diff fixture: %v", err)
+	}
+	return path
+}
+
+func writeCLISemanticDiffResponse(t *testing.T, root string, payload map[string]any) string {
+	t.Helper()
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatalf("failed marshaling semantic diff response: %v", err)
+	}
+	path := filepath.Join(root, "semantic-response.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("failed writing semantic diff response: %v", err)
+	}
+	return path
 }
