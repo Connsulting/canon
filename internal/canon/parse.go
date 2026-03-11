@@ -47,52 +47,186 @@ func parseFrontmatter(lines []string) (map[string]any, error) {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
-		parsed := parseScalarOrList(val)
+		parsed, err := parseScalarOrList(val)
+		if err != nil {
+			return nil, fmt.Errorf("invalid frontmatter value for %s: %w", key, err)
+		}
 		out[key] = parsed
 	}
 	return out, nil
 }
 
-func parseScalarOrList(value string) any {
-	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
-		inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
-		if inner == "" {
-			return []string{}
-		}
-		parts := strings.Split(inner, ",")
-		out := make([]string, 0, len(parts))
-		for _, part := range parts {
-			item := stripQuotes(strings.TrimSpace(part))
-			if item != "" {
-				out = append(out, item)
-			}
-		}
-		return out
+func parseScalarOrList(value string) (any, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
 	}
 
-	if i, err := strconv.Atoi(value); err == nil {
-		return i
+	if strings.HasPrefix(trimmed, "[") || strings.HasSuffix(trimmed, "]") {
+		if !strings.HasPrefix(trimmed, "[") || !strings.HasSuffix(trimmed, "]") {
+			return nil, fmt.Errorf("malformed list")
+		}
+		out, err := parseBracketList(trimmed)
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
 	}
 
-	lower := strings.ToLower(value)
+	if hasQuoteBoundary(trimmed) {
+		return parseQuotedScalar(trimmed)
+	}
+
+	lower := strings.ToLower(trimmed)
 	if lower == "true" {
-		return true
+		return true, nil
 	}
 	if lower == "false" {
-		return false
+		return false, nil
 	}
 
-	return stripQuotes(value)
+	if i, err := strconv.Atoi(trimmed); err == nil {
+		if hasAmbiguousLeadingZero(trimmed) {
+			return trimmed, nil
+		}
+		return i, nil
+	}
+
+	return trimmed, nil
 }
 
-func stripQuotes(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if len(trimmed) >= 2 {
-		if (trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"') || (trimmed[0] == '\'' && trimmed[len(trimmed)-1] == '\'') {
-			return trimmed[1 : len(trimmed)-1]
+func parseBracketList(value string) ([]string, error) {
+	inner := strings.TrimSpace(value[1 : len(value)-1])
+	if inner == "" {
+		return []string{}, nil
+	}
+
+	out := make([]string, 0, 4)
+	for inner != "" {
+		item, rest, err := consumeListItem(inner)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+		rest = strings.TrimSpace(rest)
+		if rest == "" {
+			break
+		}
+		if rest[0] != ',' {
+			return nil, fmt.Errorf("expected comma separator in list")
+		}
+		inner = strings.TrimSpace(rest[1:])
+		if inner == "" {
+			return nil, fmt.Errorf("trailing comma in list")
 		}
 	}
-	return trimmed
+	return out, nil
+}
+
+func consumeListItem(value string) (string, string, error) {
+	if value == "" {
+		return "", "", fmt.Errorf("empty list item")
+	}
+
+	switch value[0] {
+	case '"', '\'':
+		token, rest, err := consumeQuotedToken(value)
+		if err != nil {
+			return "", "", err
+		}
+		parsed, err := parseQuotedScalar(token)
+		if err != nil {
+			return "", "", err
+		}
+		item, ok := parsed.(string)
+		if !ok {
+			return "", "", fmt.Errorf("quoted list item must decode to string")
+		}
+		return item, rest, nil
+	default:
+		end := strings.IndexByte(value, ',')
+		if end == -1 {
+			end = len(value)
+		}
+		item := strings.TrimSpace(value[:end])
+		if item == "" {
+			return "", "", fmt.Errorf("empty list item")
+		}
+		if strings.ContainsAny(item, `"'`) {
+			return "", "", fmt.Errorf("unexpected quote in bare list item")
+		}
+		return item, value[end:], nil
+	}
+}
+
+func consumeQuotedToken(value string) (string, string, error) {
+	if value == "" {
+		return "", "", fmt.Errorf("empty quoted scalar")
+	}
+
+	quote := value[0]
+	escaped := false
+	for i := 1; i < len(value); i++ {
+		ch := value[i]
+		if quote == '"' && escaped {
+			escaped = false
+			continue
+		}
+		if quote == '"' && ch == '\\' {
+			escaped = true
+			continue
+		}
+		if ch == quote {
+			return value[:i+1], value[i+1:], nil
+		}
+	}
+	return "", "", fmt.Errorf("unterminated quoted scalar")
+}
+
+func parseQuotedScalar(value string) (any, error) {
+	if len(value) < 2 {
+		return nil, fmt.Errorf("malformed quoted scalar")
+	}
+
+	switch value[0] {
+	case '"':
+		if value[len(value)-1] != '"' {
+			return nil, fmt.Errorf("malformed quoted scalar")
+		}
+		unquoted, err := strconv.Unquote(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid quoted scalar: %w", err)
+		}
+		return unquoted, nil
+	case '\'':
+		if value[len(value)-1] != '\'' {
+			return nil, fmt.Errorf("malformed quoted scalar")
+		}
+		inner := value[1 : len(value)-1]
+		if strings.Contains(inner, "'") {
+			return nil, fmt.Errorf("invalid quoted scalar")
+		}
+		return inner, nil
+	default:
+		return nil, fmt.Errorf("malformed quoted scalar")
+	}
+}
+
+func hasQuoteBoundary(value string) bool {
+	if len(value) == 0 {
+		return false
+	}
+	startsQuoted := value[0] == '"' || value[0] == '\''
+	endsQuoted := value[len(value)-1] == '"' || value[len(value)-1] == '\''
+	return startsQuoted || endsQuoted
+}
+
+func hasAmbiguousLeadingZero(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if strings.HasPrefix(trimmed, "-") {
+		trimmed = trimmed[1:]
+	}
+	return len(trimmed) > 1 && strings.HasPrefix(trimmed, "0")
 }
 
 func listString(meta map[string]any, key string) []string {

@@ -221,6 +221,80 @@ func TestInitCommandResponseFileAcceptAllIngestsSpecs(t *testing.T) {
 	}
 }
 
+func TestIngestAndShowPreserveQuotedFrontmatterMetadata(t *testing.T) {
+	root := t.TempDir()
+
+	if err := run([]string{"init", "--root", root, "--ai", "off"}); err != nil {
+		t.Fatalf("init command failed: %v", err)
+	}
+
+	specPath := filepath.Join(root, "quoted-input.md")
+	specText := `---
+id: spec-quoted
+type: feature
+title: "Client says, \"ship C:\\drop\": review"
+domain: canon-cli
+created: 2026-03-11T12:00:00Z
+depends_on: ["dep,one", "path\\branch"]
+touched_domains: [canon-cli]
+---
+Quoted frontmatter should survive reloads.
+`
+	if err := os.WriteFile(specPath, []byte(specText), 0o644); err != nil {
+		t.Fatalf("write spec file failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "ingest-response.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model": "test-model",
+		"canonical_spec": map[string]any{
+			"id":              "",
+			"type":            "",
+			"title":           "",
+			"domain":          "",
+			"created":         "",
+			"depends_on":      []string{},
+			"touched_domains": []string{},
+			"body":            "",
+		},
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "",
+			"conflicts":     []any{},
+		},
+	})
+
+	ingestOut := captureStdout(t, func() {
+		if err := run([]string{"ingest", "--root", root, "--response-file", responsePath, specPath}); err != nil {
+			t.Fatalf("ingest command failed: %v", err)
+		}
+	})
+	if !strings.Contains(ingestOut, "ingested spec-quoted") {
+		t.Fatalf("expected ingest output to include spec id, got:\n%s", ingestOut)
+	}
+
+	logOut := captureStdout(t, func() {
+		if err := run([]string{"log", "--root", root, "--date", "absolute"}); err != nil {
+			t.Fatalf("log command failed: %v", err)
+		}
+	})
+	if !strings.Contains(logOut, `Title: Client says, "ship C:\drop": review`) {
+		t.Fatalf("expected human-readable title in log output, got:\n%s", logOut)
+	}
+
+	showOut := captureStdout(t, func() {
+		if err := run([]string{"show", "--root", root, "spec-quoted"}); err != nil {
+			t.Fatalf("show command failed: %v", err)
+		}
+	})
+	if !strings.Contains(showOut, `title: "Client says, \"ship C:\\drop\": review"`) {
+		t.Fatalf("expected canonical title line in show output, got:\n%s", showOut)
+	}
+	if !strings.Contains(showOut, `depends_on: ["dep,one", "path\\branch"]`) {
+		t.Fatalf("expected quoted list metadata in show output, got:\n%s", showOut)
+	}
+}
+
 func TestGcCommandDryRunNoWrite(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
