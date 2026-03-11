@@ -1,0 +1,14 @@
+{
+  "spec_id": "3bb3511",
+  "title": "Frontmatter Round-Trip Parser Follow-up",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "3fd7c21"
+  ],
+  "sequence": 1773232004607671289,
+  "ingested_at": "2026-03-11T12:26:44Z",
+  "content_hash": "964e53ab99f44bb039f234cbde0e289f5a5069705e50d492cf7d5088b636e4fb",
+  "spec_path": ".canon/specs/3bb3511.spec.md",
+  "source_path": ".canon/sources/3bb3511.source.md"
+}

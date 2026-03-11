@@ -77,11 +77,12 @@ func parseScalarOrList(value string) (any, error) {
 		return parseQuotedScalar(trimmed)
 	}
 
-	lower := strings.ToLower(trimmed)
-	if lower == "true" {
+	// Canon emits lowercase boolean literals when it intends booleans.
+	// Mixed-case words such as "True" must remain strings.
+	if trimmed == "true" {
 		return true, nil
 	}
-	if lower == "false" {
+	if trimmed == "false" {
 		return false, nil
 	}
 
