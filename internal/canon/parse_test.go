@@ -35,6 +35,33 @@ func TestParseSpecTextRoundTripsCanonicalQuotedMetadata(t *testing.T) {
 	}
 }
 
+func TestParseSpecTextRoundTripsCanonicalBareBooleanLikeStrings(t *testing.T) {
+	spec := Spec{
+		ID:             "True",
+		Type:           "feature",
+		Title:          "False",
+		Domain:         "canon-cli",
+		Created:        "2026-03-11T12:05:00Z",
+		DependsOn:      []string{"3fd7c21"},
+		TouchedDomains: []string{"canon-cli"},
+		Body:           "Boolean-like metadata should remain string data.",
+	}
+
+	parsed, err := parseSpecText(canonicalSpecText(spec), "inline")
+	if err != nil {
+		t.Fatalf("parseSpecText failed: %v", err)
+	}
+
+	want := spec
+	want.DependsOn = normalizeList(spec.DependsOn)
+	want.TouchedDomains = normalizeList(spec.TouchedDomains)
+	want.Path = "inline"
+
+	if !reflect.DeepEqual(parsed, want) {
+		t.Fatalf("unexpected parsed spec:\nwant: %#v\ngot:  %#v", want, parsed)
+	}
+}
+
 func TestParseSpecTextRejectsMalformedQuotedFrontmatter(t *testing.T) {
 	tests := []struct {
 		name      string

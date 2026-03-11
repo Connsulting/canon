@@ -295,6 +295,79 @@ Quoted frontmatter should survive reloads.
 	}
 }
 
+func TestIngestAndShowPreserveBareBooleanLikeMetadata(t *testing.T) {
+	root := t.TempDir()
+
+	if err := run([]string{"init", "--root", root, "--ai", "off"}); err != nil {
+		t.Fatalf("init command failed: %v", err)
+	}
+
+	specPath := filepath.Join(root, "bool-like-input.md")
+	specText := `---
+id: True
+type: feature
+title: False
+domain: canon-cli
+created: 2026-03-11T12:05:00Z
+touched_domains: [canon-cli]
+---
+Bare boolean-like metadata should survive reloads.
+`
+	if err := os.WriteFile(specPath, []byte(specText), 0o644); err != nil {
+		t.Fatalf("write spec file failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "ingest-response.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model": "test-model",
+		"canonical_spec": map[string]any{
+			"id":              "",
+			"type":            "",
+			"title":           "",
+			"domain":          "",
+			"created":         "",
+			"depends_on":      []string{},
+			"touched_domains": []string{},
+			"body":            "",
+		},
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "",
+			"conflicts":     []any{},
+		},
+	})
+
+	ingestOut := captureStdout(t, func() {
+		if err := run([]string{"ingest", "--root", root, "--response-file", responsePath, specPath}); err != nil {
+			t.Fatalf("ingest command failed: %v", err)
+		}
+	})
+	if !strings.Contains(ingestOut, "ingested True") {
+		t.Fatalf("expected ingest output to preserve spec id, got:\n%s", ingestOut)
+	}
+
+	logOut := captureStdout(t, func() {
+		if err := run([]string{"log", "--root", root, "--date", "absolute"}); err != nil {
+			t.Fatalf("log command failed: %v", err)
+		}
+	})
+	if !strings.Contains(logOut, "Title: False") {
+		t.Fatalf("expected human-readable title in log output, got:\n%s", logOut)
+	}
+
+	showOut := captureStdout(t, func() {
+		if err := run([]string{"show", "--root", root, "True"}); err != nil {
+			t.Fatalf("show command failed: %v", err)
+		}
+	})
+	if !strings.Contains(showOut, "id: True") {
+		t.Fatalf("expected exact id in show output, got:\n%s", showOut)
+	}
+	if !strings.Contains(showOut, "title: False") {
+		t.Fatalf("expected exact title in show output, got:\n%s", showOut)
+	}
+}
+
 func TestGcCommandDryRunNoWrite(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
