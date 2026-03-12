@@ -20,6 +20,13 @@ specs:
     touches: [database]
     depends_on: [9ad4f11]
     depended_on_by: [c5e7d91]
+  5f4d8a1:
+    title: "Logging Quality Auditor"
+    type: technical
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [8cfdb59]
+    depended_on_by: []
   7c4d2e1:
     title: "Lint and Style Compliance Cleanup for Go CLI"
     type: technical
@@ -33,7 +40,7 @@ specs:
     domain: general
     touches: [general]
     depends_on: [c5e7d91]
-    depended_on_by: []
+    depended_on_by: [5f4d8a1]
   8e6a1d2:
     title: "Init Symlink Scan Stability"
     type: technical
@@ -129,7 +136,7 @@ domains:
   ai-runtime:
     specs: [c5e7d91]
   canon-cli:
-    specs: [3bb3511, 3fd7c21, 7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
+    specs: [3bb3511, 3fd7c21, 5f4d8a1, 7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
   config:
     specs: [a94f2c1, d72f3b8, e1bcd34]
   database:

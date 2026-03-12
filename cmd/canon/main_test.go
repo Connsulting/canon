@@ -1406,6 +1406,80 @@ func TestSchemaEvolutionCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestLoggingAuditCommandJSONOutputShape(t *testing.T) {
+	root := t.TempDir()
+	writeCLILoggingAuditFixture(t, root)
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"logging-audit", "--root", root, "--json"}); err != nil {
+			t.Fatalf("logging-audit command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		ArtifactCounts struct {
+			LedgerFiles int `json:"ledger_files"`
+			SpecFiles   int `json:"spec_files"`
+			SourceFiles int `json:"source_files"`
+		} `json:"artifact_counts"`
+		Summary struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.ArtifactCounts.LedgerFiles != 1 || payload.ArtifactCounts.SpecFiles != 1 || payload.ArtifactCounts.SourceFiles != 1 {
+		t.Fatalf("unexpected artifact counts: %+v", payload.ArtifactCounts)
+	}
+	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
+		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	}
+}
+
+func TestLoggingAuditCommandReturnsErrorWhenThresholdExceeded(t *testing.T) {
+	root := t.TempDir()
+	item := writeCLILoggingAuditFixture(t, root)
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(item.SpecPath))); err != nil {
+		t.Fatalf("failed removing referenced spec artifact: %v", err)
+	}
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"logging-audit", "--root", root, "--fail-on", "high"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected logging-audit to fail when threshold is exceeded")
+	}
+	if !strings.Contains(commandErr.Error(), "logging audit threshold failed") {
+		t.Fatalf("unexpected error: %v", commandErr)
+	}
+	if !strings.Contains(out, "highest severity: high") {
+		t.Fatalf("expected output to include high severity summary, got:\n%s", out)
+	}
+}
+
+func TestLoggingAuditCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"logging-audit", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoggingAuditCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"logging-audit", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for logging-audit positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestSemanticDiffCommandTextOutputWithResponseFile(t *testing.T) {
 	root := t.TempDir()
 	diffPath := writeCLISemanticDiffFixtureDiff(t, root, `diff --git a/app/auth.go b/app/auth.go
@@ -1640,6 +1714,27 @@ func writeCLISchemaMigrationFile(t *testing.T, root string, relPath string, cont
 	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing migration fixture: %v", err)
 	}
+}
+
+func writeCLILoggingAuditFixture(t *testing.T, root string) canon.IngestResult {
+	t.Helper()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	result, err := canon.Ingest(root, canon.IngestInput{
+		Text:          "Logging audit fixture body.",
+		ID:            "cliaud1",
+		Title:         "Logging Audit Fixture",
+		Domain:        "canon-cli",
+		Type:          "feature",
+		Created:       "2026-03-01T10:00:00Z",
+		NoAutoParents: true,
+		ConflictMode:  "off",
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	return result
 }
 
 func writeCLISemanticDiffFixtureDiff(t *testing.T, root string, diff string) string {
