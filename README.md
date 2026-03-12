@@ -22,6 +22,7 @@ Phase 1 only:
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon schema-evolution`
+- `go run ./cmd/canon logging-audit`
 - `go run ./cmd/canon semantic-diff`
 - `go run ./cmd/canon status`
 - `go run ./cmd/canon gc`
@@ -76,6 +77,11 @@ Schema evolution options:
 - `--json` emit machine-readable JSON findings and summary
 - `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
 
+Logging audit options:
+- `--root <path>` repository root containing Canon artifacts under `.canon/` (default: `.`)
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+
 Semantic diff options:
 - `--root <path>` repository root used for `git diff` and config (default: `.`)
 - `--diff-file <path>` read unified diff from file instead of `git diff`
@@ -103,6 +109,8 @@ go run ./cmd/canon deps-risk --root .
 go run ./cmd/canon deps-risk --root . --fail-on medium
 go run ./cmd/canon schema-evolution --root .
 go run ./cmd/canon schema-evolution --root . --fail-on medium
+go run ./cmd/canon logging-audit --root . --json
+go run ./cmd/canon logging-audit --root . --fail-on high
 go run ./cmd/canon semantic-diff --root .
 go run ./cmd/canon semantic-diff --root . --diff-file fixtures/semantic.diff --response-file fixtures/semantic-response.json --json
 ```

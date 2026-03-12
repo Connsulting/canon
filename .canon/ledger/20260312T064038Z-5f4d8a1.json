@@ -1,0 +1,14 @@
+{
+  "spec_id": "5f4d8a1",
+  "title": "Logging Quality Auditor",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "8cfdb59"
+  ],
+  "sequence": 1773297638280177810,
+  "ingested_at": "2026-03-12T06:40:38Z",
+  "content_hash": "d68eeae415a5303cce15a892a375fee6d2b4e356285293d8f9dd96f5b3b6506c",
+  "spec_path": ".canon/specs/5f4d8a1.spec.md",
+  "source_path": ".canon/sources/5f4d8a1.source.md"
+}

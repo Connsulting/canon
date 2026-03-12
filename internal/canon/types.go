@@ -227,6 +227,64 @@ type SchemaEvolutionResult struct {
 	ThresholdExceeded  bool                     `json:"threshold_exceeded"`
 }
 
+type LoggingAuditSeverity string
+
+const (
+	LoggingAuditSeverityNone     LoggingAuditSeverity = "none"
+	LoggingAuditSeverityLow      LoggingAuditSeverity = "low"
+	LoggingAuditSeverityMedium   LoggingAuditSeverity = "medium"
+	LoggingAuditSeverityHigh     LoggingAuditSeverity = "high"
+	LoggingAuditSeverityCritical LoggingAuditSeverity = "critical"
+)
+
+type LoggingAuditOptions struct {
+	FailOn LoggingAuditSeverity
+}
+
+type LoggingAuditDirectories struct {
+	Ledger  string `json:"ledger"`
+	Specs   string `json:"specs"`
+	Sources string `json:"sources"`
+}
+
+type LoggingAuditFinding struct {
+	RuleID       string               `json:"rule_id"`
+	Severity     LoggingAuditSeverity `json:"severity"`
+	ArtifactKind string               `json:"artifact_kind"`
+	Path         string               `json:"path"`
+	SpecID       string               `json:"spec_id,omitempty"`
+	Message      string               `json:"message"`
+}
+
+type LoggingAuditSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type LoggingAuditSummary struct {
+	TotalFindings      int                        `json:"total_findings"`
+	HighestSeverity    LoggingAuditSeverity       `json:"highest_severity"`
+	FindingsBySeverity LoggingAuditSeverityCounts `json:"findings_by_severity"`
+}
+
+type LoggingAuditArtifactCounts struct {
+	LedgerFiles int `json:"ledger_files"`
+	SpecFiles   int `json:"spec_files"`
+	SourceFiles int `json:"source_files"`
+}
+
+type LoggingAuditResult struct {
+	Root              string                     `json:"root"`
+	Directories       LoggingAuditDirectories    `json:"directories"`
+	ArtifactCounts    LoggingAuditArtifactCounts `json:"artifact_counts"`
+	Findings          []LoggingAuditFinding      `json:"findings"`
+	Summary           LoggingAuditSummary        `json:"summary"`
+	FailOn            LoggingAuditSeverity       `json:"fail_on,omitempty"`
+	ThresholdExceeded bool                       `json:"threshold_exceeded"`
+}
+
 type SemanticDiffOptions struct {
 	DiffFile     string
 	AIMode       string
