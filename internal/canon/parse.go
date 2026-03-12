@@ -224,9 +224,7 @@ func hasQuoteBoundary(value string) bool {
 
 func hasAmbiguousLeadingZero(value string) bool {
 	trimmed := strings.TrimSpace(value)
-	if strings.HasPrefix(trimmed, "-") {
-		trimmed = trimmed[1:]
-	}
+	trimmed = strings.TrimPrefix(trimmed, "-")
 	return len(trimmed) > 1 && strings.HasPrefix(trimmed, "0")
 }
 

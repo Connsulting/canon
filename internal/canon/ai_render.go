@@ -129,8 +129,10 @@ func runHeadlessAIRender(provider string, index Index, domainDocs map[string]str
 		responseFile.Close()
 		defer func() { _ = os.Remove(responsePath) }()
 
-		ctx := context.Background()
-		cancel := func() {}
+		var (
+			ctx    context.Context
+			cancel context.CancelFunc
+		)
 		if timeout > 0 {
 			ctx, cancel = context.WithTimeout(context.Background(), timeout)
 		} else {
@@ -167,8 +169,10 @@ func runHeadlessAIRender(provider string, index Index, domainDocs map[string]str
 		return decodeAIRenderResponse(responseBytes)
 
 	case "claude":
-		ctx := context.Background()
-		cancel := func() {}
+		var (
+			ctx    context.Context
+			cancel context.CancelFunc
+		)
 		if timeout > 0 {
 			ctx, cancel = context.WithTimeout(context.Background(), timeout)
 		} else {

@@ -103,21 +103,6 @@ func inferTitle(body string) string {
 	return "Untitled Spec"
 }
 
-func parseCSV(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		v := strings.TrimSpace(part)
-		if v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
 func parseRFC3339OrNow(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
