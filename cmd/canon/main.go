@@ -960,8 +960,8 @@ func renderLoggingAuditText(result canon.LoggingAuditResult) string {
 		result.Summary.FindingsBySeverity.High,
 		result.Summary.FindingsBySeverity.Critical,
 	)
-	if result.FailOn != "" {
-		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	if result.FailOn != "" && result.ThresholdExceeded != nil {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, *result.ThresholdExceeded)
 	}
 
 	if len(result.Findings) == 0 {

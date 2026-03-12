@@ -31,6 +31,29 @@ func TestLoggingAuditCleanArtifacts(t *testing.T) {
 	}
 }
 
+func TestLoggingAuditAcceptsNestedSourceArtifacts(t *testing.T) {
+	root := t.TempDir()
+	ensureLoggingAuditLayout(t, root)
+
+	item := ingestLoggingAuditSpec(t, root, "nested/log0001", "Nested Logging Audit", "canon-cli", "feature", "2026-03-01T10:00:00Z")
+	entry := readLoggingAuditLedgerEntry(t, root, item.LedgerPath)
+	if got, want := entry.SourcePath, ".canon/sources/nested/log0001.source.md"; got != want {
+		t.Fatalf("unexpected source path: got=%q want=%q", got, want)
+	}
+
+	result, err := LoggingAudit(root, LoggingAuditOptions{})
+	if err != nil {
+		t.Fatalf("LoggingAudit failed: %v", err)
+	}
+
+	if result.ArtifactCounts.SourceFiles != 1 {
+		t.Fatalf("expected nested source artifact to be counted, got %+v", result.ArtifactCounts)
+	}
+	if len(result.Findings) != 0 {
+		t.Fatalf("expected no findings for valid nested source artifact, got %+v", result.Findings)
+	}
+}
+
 func TestLoggingAuditReportsCorruptedArtifactsInDeterministicOrder(t *testing.T) {
 	root := t.TempDir()
 	ensureLoggingAuditLayout(t, root)
@@ -190,11 +213,19 @@ func TestLoggingAuditThresholdBehavior(t *testing.T) {
 		t.Fatalf("failed removing spec artifact: %v", err)
 	}
 
+	baseResult, err := LoggingAudit(root, LoggingAuditOptions{})
+	if err != nil {
+		t.Fatalf("LoggingAudit without fail-on failed: %v", err)
+	}
+	if baseResult.FailOn != "" || baseResult.ThresholdExceeded != nil {
+		t.Fatalf("expected threshold metadata to be omitted without fail-on, got %+v", baseResult)
+	}
+
 	highResult, err := LoggingAudit(root, LoggingAuditOptions{FailOn: LoggingAuditSeverityHigh})
 	if err != nil {
 		t.Fatalf("LoggingAudit with high fail-on failed: %v", err)
 	}
-	if !highResult.ThresholdExceeded || highResult.FailOn != LoggingAuditSeverityHigh {
+	if highResult.FailOn != LoggingAuditSeverityHigh || highResult.ThresholdExceeded == nil || !*highResult.ThresholdExceeded {
 		t.Fatalf("expected high threshold to be exceeded, got %+v", highResult)
 	}
 
@@ -202,7 +233,10 @@ func TestLoggingAuditThresholdBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoggingAudit with critical fail-on failed: %v", err)
 	}
-	if criticalResult.ThresholdExceeded {
+	if criticalResult.ThresholdExceeded == nil {
+		t.Fatalf("expected threshold metadata when fail-on is provided")
+	}
+	if *criticalResult.ThresholdExceeded {
 		t.Fatalf("did not expect critical threshold to be exceeded")
 	}
 

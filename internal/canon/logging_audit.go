@@ -3,6 +3,7 @@ package canon
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -105,28 +106,19 @@ func LoggingAudit(root string, opts LoggingAuditOptions) (LoggingAuditResult, er
 		})
 	}
 
-	ledgerPaths, err := loggingAuditListArtifactPaths(absRoot, ".canon/ledger", "*.json")
-	if err != nil {
-		return LoggingAuditResult{}, err
-	}
-	specPaths, err := loggingAuditListArtifactPaths(absRoot, ".canon/specs", "*.spec.md")
-	if err != nil {
-		return LoggingAuditResult{}, err
-	}
-	sourcePaths, err := loggingAuditListArtifactPaths(absRoot, ".canon/sources", "*.source.md")
-	if err != nil {
-		return LoggingAuditResult{}, err
-	}
+	loggingAuditCheckDirectory(absRoot, ".canon/ledger", addFinding)
+	loggingAuditCheckDirectory(absRoot, ".canon/specs", addFinding)
+	loggingAuditCheckDirectory(absRoot, ".canon/sources", addFinding)
+
+	ledgerPaths := loggingAuditDiscoverArtifactPaths(absRoot, ".canon/ledger", ".json", loggingAuditArtifactKindLedger, addFinding)
+	specPaths := loggingAuditDiscoverArtifactPaths(absRoot, ".canon/specs", ".spec.md", loggingAuditArtifactKindSpec, addFinding)
+	sourcePaths := loggingAuditDiscoverArtifactPaths(absRoot, ".canon/sources", ".source.md", loggingAuditArtifactKindSource, addFinding)
 
 	result.ArtifactCounts = LoggingAuditArtifactCounts{
 		LedgerFiles: len(ledgerPaths),
 		SpecFiles:   len(specPaths),
 		SourceFiles: len(sourcePaths),
 	}
-
-	loggingAuditCheckDirectory(absRoot, ".canon/ledger", addFinding)
-	loggingAuditCheckDirectory(absRoot, ".canon/specs", addFinding)
-	loggingAuditCheckDirectory(absRoot, ".canon/sources", addFinding)
 
 	specArtifacts := make(map[string]loggingAuditSpecArtifact, len(specPaths))
 	specsByID := make(map[string]loggingAuditSpecArtifact, len(specPaths))
@@ -474,29 +466,87 @@ func LoggingAudit(root string, opts LoggingAuditOptions) (LoggingAuditResult, er
 		}
 		if failOn != LoggingAuditSeverityNone {
 			result.FailOn = failOn
-			result.ThresholdExceeded = loggingAuditExceedsThreshold(result, failOn)
+			exceeded := loggingAuditExceedsThreshold(result, failOn)
+			result.ThresholdExceeded = &exceeded
 		}
 	}
 
 	return result, nil
 }
 
-func loggingAuditListArtifactPaths(root string, relDir string, pattern string) ([]string, error) {
-	matches, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(relDir), pattern))
-	if err != nil {
-		return nil, err
+func loggingAuditDiscoverArtifactPaths(
+	root string,
+	relDir string,
+	suffix string,
+	artifactKind string,
+	addFinding func(string, LoggingAuditSeverity, string, string, string, string),
+) []string {
+	absDir := filepath.Join(root, filepath.FromSlash(relDir))
+	info, err := os.Stat(absDir)
+	if err != nil || !info.IsDir() {
+		return nil
 	}
 
-	paths := make([]string, 0, len(matches))
-	for _, absPath := range matches {
-		relPath, err := filepath.Rel(root, absPath)
-		if err != nil {
-			return nil, err
+	paths := make([]string, 0)
+	walkErr := filepath.WalkDir(absDir, func(absPath string, entry fs.DirEntry, entryErr error) error {
+		relPath, relErr := filepath.Rel(root, absPath)
+		if relErr != nil {
+			return relErr
 		}
-		paths = append(paths, filepath.ToSlash(relPath))
+		relPath = filepath.ToSlash(relPath)
+
+		if entryErr != nil {
+			addFinding(
+				loggingAuditRuleUnreadableArtifact,
+				LoggingAuditSeverityCritical,
+				artifactKind,
+				relPath,
+				"",
+				fmt.Sprintf("cannot inspect artifact: %v", entryErr),
+			)
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if relPath == relDir {
+			return nil
+		}
+
+		if entry.IsDir() {
+			if strings.HasSuffix(entry.Name(), suffix) {
+				addFinding(
+					loggingAuditRuleUnreadableArtifact,
+					LoggingAuditSeverityCritical,
+					artifactKind,
+					relPath,
+					"",
+					fmt.Sprintf("expected artifact file but found directory: %s", relPath),
+				)
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), suffix) {
+			return nil
+		}
+
+		paths = append(paths, relPath)
+		return nil
+	})
+	if walkErr != nil {
+		addFinding(
+			loggingAuditRuleUnreadableArtifact,
+			LoggingAuditSeverityCritical,
+			artifactKind,
+			relDir,
+			"",
+			fmt.Sprintf("cannot walk artifact directory: %v", walkErr),
+		)
 	}
+
 	sort.Strings(paths)
-	return paths, nil
+	return paths
 }
 
 func loggingAuditCheckDirectory(root string, relDir string, addFinding func(string, LoggingAuditSeverity, string, string, string, string)) {

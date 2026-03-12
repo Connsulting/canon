@@ -1408,7 +1408,7 @@ func TestSchemaEvolutionCommandRejectsPositionalArgs(t *testing.T) {
 
 func TestLoggingAuditCommandJSONOutputShape(t *testing.T) {
 	root := t.TempDir()
-	writeCLILoggingAuditFixture(t, root)
+	writeCLILoggingAuditFixtureWithID(t, root, "nested/cliaud1")
 
 	out := captureStdout(t, func() {
 		if err := run([]string{"logging-audit", "--root", root, "--json"}); err != nil {
@@ -1416,25 +1416,37 @@ func TestLoggingAuditCommandJSONOutputShape(t *testing.T) {
 		}
 	})
 
-	var payload struct {
-		ArtifactCounts struct {
-			LedgerFiles int `json:"ledger_files"`
-			SpecFiles   int `json:"spec_files"`
-			SourceFiles int `json:"source_files"`
-		} `json:"artifact_counts"`
-		Summary struct {
-			TotalFindings   int    `json:"total_findings"`
-			HighestSeverity string `json:"highest_severity"`
-		} `json:"summary"`
-	}
+	var payload map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(out), &payload); err != nil {
 		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
 	}
-	if payload.ArtifactCounts.LedgerFiles != 1 || payload.ArtifactCounts.SpecFiles != 1 || payload.ArtifactCounts.SourceFiles != 1 {
-		t.Fatalf("unexpected artifact counts: %+v", payload.ArtifactCounts)
+	if _, ok := payload["fail_on"]; ok {
+		t.Fatalf("did not expect fail_on in payload without --fail-on: %s", out)
 	}
-	if payload.Summary.TotalFindings != 0 || payload.Summary.HighestSeverity != "none" {
-		t.Fatalf("unexpected summary payload: %+v", payload.Summary)
+	if _, ok := payload["threshold_exceeded"]; ok {
+		t.Fatalf("did not expect threshold_exceeded in payload without --fail-on: %s", out)
+	}
+
+	var artifactCounts struct {
+		LedgerFiles int `json:"ledger_files"`
+		SpecFiles   int `json:"spec_files"`
+		SourceFiles int `json:"source_files"`
+	}
+	if err := json.Unmarshal(payload["artifact_counts"], &artifactCounts); err != nil {
+		t.Fatalf("artifact_counts payload is invalid: %v", err)
+	}
+	var summary struct {
+		TotalFindings   int    `json:"total_findings"`
+		HighestSeverity string `json:"highest_severity"`
+	}
+	if err := json.Unmarshal(payload["summary"], &summary); err != nil {
+		t.Fatalf("summary payload is invalid: %v", err)
+	}
+	if artifactCounts.LedgerFiles != 1 || artifactCounts.SpecFiles != 1 || artifactCounts.SourceFiles != 1 {
+		t.Fatalf("unexpected artifact counts: %+v", artifactCounts)
+	}
+	if summary.TotalFindings != 0 || summary.HighestSeverity != "none" {
+		t.Fatalf("unexpected summary payload: %+v", summary)
 	}
 }
 
@@ -1718,12 +1730,17 @@ func writeCLISchemaMigrationFile(t *testing.T, root string, relPath string, cont
 
 func writeCLILoggingAuditFixture(t *testing.T, root string) canon.IngestResult {
 	t.Helper()
+	return writeCLILoggingAuditFixtureWithID(t, root, "cliaud1")
+}
+
+func writeCLILoggingAuditFixtureWithID(t *testing.T, root string, specID string) canon.IngestResult {
+	t.Helper()
 	if err := canon.EnsureLayout(root, true); err != nil {
 		t.Fatalf("EnsureLayout failed: %v", err)
 	}
 	result, err := canon.Ingest(root, canon.IngestInput{
 		Text:          "Logging audit fixture body.",
-		ID:            "cliaud1",
+		ID:            specID,
 		Title:         "Logging Audit Fixture",
 		Domain:        "canon-cli",
 		Type:          "feature",
