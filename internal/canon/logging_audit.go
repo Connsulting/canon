@@ -386,18 +386,19 @@ func LoggingAudit(root string, opts LoggingAuditOptions) (LoggingAuditResult, er
 			)
 		}
 
+		if record.Type != "" && !loggingAuditIsKnownSpecType(record.Type) {
+			addFinding(
+				loggingAuditRuleUnknownSpecType,
+				LoggingAuditSeverityMedium,
+				loggingAuditArtifactKindLedger,
+				record.Path,
+				record.SpecID,
+				fmt.Sprintf("unknown spec type %q", record.Type),
+			)
+		}
+
 		specArtifact, ok := loggingAuditResolveSpecArtifact(record, specArtifacts, specsByID)
 		if !ok {
-			if record.Type != "" && !loggingAuditIsKnownSpecType(record.Type) {
-				addFinding(
-					loggingAuditRuleUnknownSpecType,
-					LoggingAuditSeverityMedium,
-					loggingAuditArtifactKindLedger,
-					record.Path,
-					record.SpecID,
-					fmt.Sprintf("unknown spec type %q", record.Type),
-				)
-			}
 			continue
 		}
 

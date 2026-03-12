@@ -204,6 +204,43 @@ func TestLoggingAuditReportsMetadataHashAndUnknownTypeIssues(t *testing.T) {
 	}
 }
 
+func TestLoggingAuditFlagsUnknownLedgerTypeWhenSpecExists(t *testing.T) {
+	root := t.TempDir()
+	ensureLoggingAuditLayout(t, root)
+	item := ingestLoggingAuditSpec(t, root, "log0001", "Logging Audit Base", "canon-cli", "feature", "2026-03-01T10:00:00Z")
+
+	entry := readLoggingAuditLedgerEntry(t, root, item.LedgerPath)
+	entry.Type = "mystery"
+	writeLoggingAuditLedgerEntry(t, root, item.LedgerPath, entry)
+
+	result, err := LoggingAudit(root, LoggingAuditOptions{})
+	if err != nil {
+		t.Fatalf("LoggingAudit failed: %v", err)
+	}
+
+	assertLoggingAuditRuleIDs(t, result.Findings, []string{
+		loggingAuditRuleMetadataMismatch,
+		loggingAuditRuleUnknownSpecType,
+	})
+	if result.Summary.TotalFindings != 2 || result.Summary.HighestSeverity != LoggingAuditSeverityMedium {
+		t.Fatalf("unexpected summary: %+v", result.Summary)
+	}
+
+	unknownTypeFindings := 0
+	for _, finding := range result.Findings {
+		if finding.RuleID != loggingAuditRuleUnknownSpecType {
+			continue
+		}
+		unknownTypeFindings++
+		if finding.ArtifactKind != loggingAuditArtifactKindLedger {
+			t.Fatalf("expected unknown type finding on ledger artifact, got %+v", finding)
+		}
+	}
+	if unknownTypeFindings != 1 {
+		t.Fatalf("expected exactly one ledger unknown type finding, got %d", unknownTypeFindings)
+	}
+}
+
 func TestLoggingAuditThresholdBehavior(t *testing.T) {
 	root := t.TempDir()
 	ensureLoggingAuditLayout(t, root)
