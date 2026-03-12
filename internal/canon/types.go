@@ -282,7 +282,7 @@ type LoggingAuditResult struct {
 	Findings          []LoggingAuditFinding      `json:"findings"`
 	Summary           LoggingAuditSummary        `json:"summary"`
 	FailOn            LoggingAuditSeverity       `json:"fail_on,omitempty"`
-	ThresholdExceeded bool                       `json:"threshold_exceeded"`
+	ThresholdExceeded *bool                      `json:"threshold_exceeded,omitempty"`
 }
 
 type SemanticDiffOptions struct {
