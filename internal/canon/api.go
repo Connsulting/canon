@@ -53,6 +53,18 @@ func SchemaEvolutionExceedsThresholdForCLI(result SchemaEvolutionResult, thresho
 	return schemaEvolutionExceedsThreshold(result, threshold)
 }
 
+func LoggingAuditForCLI(root string, opts LoggingAuditOptions) (LoggingAuditResult, error) {
+	return LoggingAudit(root, opts)
+}
+
+func ParseLoggingAuditSeverityForCLI(value string) (LoggingAuditSeverity, error) {
+	return parseLoggingAuditSeverity(value)
+}
+
+func LoggingAuditExceedsThresholdForCLI(result LoggingAuditResult, threshold LoggingAuditSeverity) bool {
+	return loggingAuditExceedsThreshold(result, threshold)
+}
+
 func SemanticDiffForCLI(root string, opts SemanticDiffOptions) (SemanticDiffResult, error) {
 	return SemanticDiff(root, opts)
 }
