@@ -687,6 +687,59 @@ func TestLogShowTagsFlag(t *testing.T) {
 	}
 }
 
+func TestLogRejectsUnexpectedPositionalArgs(t *testing.T) {
+	err := run([]string{"log", "unexpected"})
+	if err == nil {
+		t.Fatalf("expected error for log positional args")
+	}
+	if !strings.Contains(err.Error(), "log does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLogAbsoluteDateRespectsExplicitPrimaryHeadScope(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:          "Auth requirements with no dependencies.",
+		ID:            "auth-a1",
+		Title:         "Auth Baseline",
+		Type:          "feature",
+		Domain:        "auth",
+		Created:       "2026-02-19T10:00:00Z",
+		NoAutoParents: true,
+	}); err != nil {
+		t.Fatalf("Ingest auth-a1 failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:          "Billing requirements with no dependencies.",
+		ID:            "billing-a1",
+		Title:         "Billing Baseline",
+		Type:          "feature",
+		Domain:        "billing",
+		Created:       "2026-02-18T10:00:00Z",
+		NoAutoParents: true,
+	}); err != nil {
+		t.Fatalf("Ingest billing-a1 failed: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"log", "--root", root, "--date", "absolute", "--all=false"}); err != nil {
+			t.Fatalf("log command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Spec: billing-a1") {
+		t.Fatalf("expected primary head in scoped output, got:\n%s", out)
+	}
+	if strings.Contains(out, "Spec: auth-a1") {
+		t.Fatalf("did not expect disconnected secondary head in scoped output, got:\n%s", out)
+	}
+}
+
 func TestLogDefaultsUseRelativeDatesAndAllHeads(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
@@ -694,24 +747,24 @@ func TestLogDefaultsUseRelativeDatesAndAllHeads(t *testing.T) {
 	}
 
 	if _, err := canon.Ingest(root, canon.IngestInput{
-		Text:      "Auth requirements with no dependencies.",
-		ID:        "auth-a1",
-		Title:     "Auth Baseline",
-		Type:      "feature",
-		Domain:    "auth",
-		Created:   "2026-02-19T10:00:00Z",
-		Parents:   nil,
-		DependsOn: nil,
+		Text:          "Auth requirements with no dependencies.",
+		ID:            "auth-a1",
+		Title:         "Auth Baseline",
+		Type:          "feature",
+		Domain:        "auth",
+		Created:       "2026-02-19T10:00:00Z",
+		NoAutoParents: true,
 	}); err != nil {
 		t.Fatalf("Ingest auth-a1 failed: %v", err)
 	}
 	if _, err := canon.Ingest(root, canon.IngestInput{
-		Text:    "Billing requirements with no dependencies.",
-		ID:      "billing-a1",
-		Title:   "Billing Baseline",
-		Type:    "feature",
-		Domain:  "billing",
-		Created: "2026-02-18T10:00:00Z",
+		Text:          "Billing requirements with no dependencies.",
+		ID:            "billing-a1",
+		Title:         "Billing Baseline",
+		Type:          "feature",
+		Domain:        "billing",
+		Created:       "2026-02-18T10:00:00Z",
+		NoAutoParents: true,
 	}); err != nil {
 		t.Fatalf("Ingest billing-a1 failed: %v", err)
 	}

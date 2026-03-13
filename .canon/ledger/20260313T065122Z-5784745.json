@@ -1,0 +1,14 @@
+{
+  "spec_id": "5784745",
+  "title": "Canon Log CLI Validation and Scope Fixes",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "8cfdb59"
+  ],
+  "sequence": 1773384682397851947,
+  "ingested_at": "2026-03-13T06:51:22Z",
+  "content_hash": "c16ca40e7df3e68569c9d92f0267def5b0a8d5e03c9b474f59e7c9accecca87f",
+  "spec_path": ".canon/specs/5784745.spec.md",
+  "source_path": ".canon/sources/5784745.source.md"
+}

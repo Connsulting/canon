@@ -38,7 +38,7 @@ Render options:
 Log options:
 - `--graph` render dependency graph view from `depends_on`
 - `--oneline` compact one-line rows
-- `--all` include all disconnected heads (default scopes to primary head)
+- `--all` include all disconnected heads (default: `true`; use `--all=false` to scope to the primary head)
 - `--grep <text>` case-insensitive title filter
 - `--domain <name>` exact domain filter
 - `--type <name>` exact type filter

@@ -321,6 +321,9 @@ func cmdLog(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	if fs.NArg() > 0 {
+		return errors.New("log does not accept positional arguments")
+	}
 	abs, err := filepath.Abs(*root)
 	if err != nil {
 		return err
@@ -328,6 +331,7 @@ func cmdLog(args []string) error {
 
 	useLegacy := !*graph &&
 		!*oneline &&
+		*all &&
 		strings.TrimSpace(*grep) == "" &&
 		strings.TrimSpace(*domain) == "" &&
 		strings.TrimSpace(*typeName) == "" &&
