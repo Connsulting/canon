@@ -25,7 +25,7 @@ func Render(root string, options RenderOptions) (RenderResult, error) {
 		mode = "off"
 	}
 
-	domainDocs, domainContributors, domainChecksums := buildDomainDocuments(index)
+	domainDocs, domainContributors, _ := buildDomainDocuments(index)
 	interactionDocs, interactionContributors := buildInteractionDocuments(index)
 	gaps := defaultGaps()
 
@@ -48,7 +48,7 @@ func Render(root string, options RenderOptions) (RenderResult, error) {
 		}
 	}
 
-	domainChecksums = computeDomainChecksums(domainDocs)
+	domainChecksums := computeDomainChecksums(domainDocs)
 	fileMap, err := buildStateFileMap(domainContributors, domainChecksums, interactionContributors)
 	if err != nil {
 		return RenderResult{}, err

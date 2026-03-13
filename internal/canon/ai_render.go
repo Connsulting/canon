@@ -129,12 +129,9 @@ func runHeadlessAIRender(provider string, index Index, domainDocs map[string]str
 		responseFile.Close()
 		defer func() { _ = os.Remove(responsePath) }()
 
-		ctx := context.Background()
-		cancel := func() {}
+		ctx, cancel := context.WithCancel(context.Background())
 		if timeout > 0 {
 			ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		} else {
-			ctx, cancel = context.WithCancel(context.Background())
 		}
 		defer cancel()
 		cmd := exec.CommandContext(
@@ -167,12 +164,9 @@ func runHeadlessAIRender(provider string, index Index, domainDocs map[string]str
 		return decodeAIRenderResponse(responseBytes)
 
 	case "claude":
-		ctx := context.Background()
-		cancel := func() {}
+		ctx, cancel := context.WithCancel(context.Background())
 		if timeout > 0 {
 			ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		} else {
-			ctx, cancel = context.WithCancel(context.Background())
 		}
 		defer cancel()
 		cmd := exec.CommandContext(
