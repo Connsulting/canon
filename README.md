@@ -15,83 +15,192 @@ Phase 1 only:
 - `go run ./cmd/canon import <spec-file>` (alias for ingest)
 - `go run ./cmd/canon raw`
 - `go run ./cmd/canon log`
-- `go run ./cmd/canon check`
 - `go run ./cmd/canon show <spec-id>`
 - `go run ./cmd/canon reset <spec-id>`
-- `go run ./cmd/canon render --write`
+- `go run ./cmd/canon render`
+- `go run ./cmd/canon status`
+- `go run ./cmd/canon gc`
+- `go run ./cmd/canon index`
+- `go run ./cmd/canon check`
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon schema-evolution`
 - `go run ./cmd/canon semantic-diff`
-- `go run ./cmd/canon status`
-- `go run ./cmd/canon gc`
+- `go run ./cmd/canon version`
+- `go run ./cmd/canon help`
 
-Spec ID convention:
-- Use 7-char SHA-like hex IDs (for example `a1b2c3d`) for consistency with git-style history views.
-- Canon-generated fallback IDs also use the same 7-char SHA-like format.
+## Command Reference
 
-Render options:
-- `--ai off|auto|from-response` (default: `auto`)
-- `--ai-provider codex|claude` (default from config)
-- `--response-file <path>` (required for `from-response`; implied when provided with `auto`)
+### init
+`go run ./cmd/canon init [options]`
 
-Log options:
-- `--graph` render dependency graph view from `depends_on`
-- `--oneline` compact one-line rows
+- `--root <path>` repository root (default: `.`)
+- `--ai off|auto` AI bootstrap mode (default: `auto`)
+- `--ai-provider codex|claude` override the configured provider
+- `--response-file <path>` precomputed AI response JSON; when paired with the default `--ai auto`, Canon switches to replay mode
+- `--no-interactive` accept generated specs without review
+- `--accept-all` alias for `--no-interactive`
+- `--max-specs <n>` maximum specs to generate (default: `10`)
+- `--context-limit <kb>` max project context size in KB (default: `100`)
+- `--include <glob>` additional include pattern (repeatable)
+- `--exclude <glob>` additional exclude pattern (repeatable)
+
+### ingest / import
+`go run ./cmd/canon ingest <spec-file>`
+`go run ./cmd/canon import <spec-file>`
+
+- `--root <path>` repository root (default: `.`)
+- `--file <path>` pass the source markdown file without using a positional argument
+- `--title <title>` override the ingested spec title
+- `--domain <name>` override the ingested spec domain
+- `--type <name>` override the ingested spec type
+- `--id <spec-id>` override the ingested spec id
+- `--created <timestamp>` override the RFC3339 created timestamp
+- `--depends-on <id1,id2,...>` override dependency ids
+- `--touches <domain1,domain2,...>` override touched domains
+- `--parents <id1,id2,...>` override parent spec ids
+- `--ai-provider codex|claude` override the configured provider
+- `--response-file <path>` use a precomputed conflict-check response
+
+### raw
+`go run ./cmd/canon raw`
+`go run ./cmd/canon raw --text "<freeform text>"`
+
+- `--root <path>` repository root (default: `.`)
+- `--text <text>` provide the raw text directly; if omitted, Canon prompts for interactive input
+- `--title <title>` override the ingested spec title
+- `--domain <name>` override the ingested spec domain
+- `--type <name>` override the ingested spec type
+- `--id <spec-id>` override the ingested spec id
+- `--created <timestamp>` override the RFC3339 created timestamp
+- `--depends-on <id1,id2,...>` override dependency ids
+- `--touches <domain1,domain2,...>` override touched domains
+- `--parents <id1,id2,...>` override parent spec ids
+- `--ai-provider codex|claude` override the configured provider
+- `--response-file <path>` use a precomputed conflict-check response
+
+### log
+`go run ./cmd/canon log [options]`
+
+- `--root <path>` repository root (default: `.`)
+- `--graph` render the dependency graph view from `depends_on`
+- `--oneline` render compact one-line rows
 - `--all` include all disconnected heads (default: `true`; use `--all=false` to scope to the primary head)
+- `-n <count>` max rows (default: `50`)
 - `--grep <text>` case-insensitive title filter
 - `--domain <name>` exact domain filter
 - `--type <name>` exact type filter
 - `--color auto|always|never` ANSI color output (default: `auto`)
 - `--date absolute|relative` timestamp display mode (default: `relative`)
-- `-n <count>` max rows (defaults to 50)
+- `--show-tags` include qualified `[type/domain]` tags
 
-Blame options:
+### show
+`go run ./cmd/canon show <spec-id>`
+
 - `--root <path>` repository root (default: `.`)
-- `--domain <name>` restrict blame to one domain
-- `--json` machine readable output
-- `--ai-provider codex|claude` override configured provider
-- `--response-file <path>` use precomputed AI response JSON
 
-Blame defaults:
-- `canon blame "<text>"` uses current directory as root
-- output defaults to human readable terminal text
-- AI provider defaults from config (`./.canonconfig`, then `~/.canonconfig`, then built in `codex`)
-Check options:
-- `--domain <name>` restrict conflict scan to matching spec domains
-- `--spec <id>` check one spec against the remaining in-scope specs
-- `--ai auto|from-response` AI check mode (default: `auto`)
-- `--ai-provider codex|claude` AI provider override
-- `--response-file <path>` JSON response file for `from-response` mode
-- `--json` emit machine-readable JSON
-- `--write` persist conflict reports under `.canon/conflict-reports/`
+### reset
+`go run ./cmd/canon reset <spec-id>`
 
-Dependency risk options:
-- `--root <path>` repository root containing `go.mod` (default: `.`)
-- `--json` emit machine-readable JSON findings and summary
-- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+- `--root <path>` repository root (default: `.`)
 
-Schema evolution options:
-- `--root <path>` repository root containing SQL migration files (default: `.`)
-- `--json` emit machine-readable JSON findings and summary
-- `--fail-on <severity>` fail command when highest severity meets/exceeds threshold (`low`, `medium`, `high`, `critical`)
+### render
+`go run ./cmd/canon render [options]`
 
-Semantic diff options:
-- `--root <path>` repository root used for `git diff` and config (default: `.`)
-- `--diff-file <path>` read unified diff from file instead of `git diff`
-- `--json` emit machine-readable JSON explanations and summary
-- `--ai <mode>` AI mode: `auto` or `from-response` (default: `auto`)
-- `--ai-provider <name>` provider override: `codex` or `claude`
-- `--response-file <path>` deterministic replay input for `from-response` mode (implied when provided with `auto`)
+- `--root <path>` repository root (default: `.`)
+- `--write` write generated artifacts instead of a dry run
+- `--ai off|auto|from-response` AI render mode (default: `auto`)
+- `--ai-provider codex|claude` override the configured provider
+- `--response-file <path>` precomputed AI render response; when paired with the default `--ai auto`, Canon switches to replay mode
 
-GC options:
+### status
+`go run ./cmd/canon status`
+
+- `--root <path>` repository root (default: `.`)
+
+### gc
+`go run ./cmd/canon gc [options]`
+
+- `--root <path>` repository root (default: `.`)
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
 - `--write` execute consolidation (default is dry run)
 - `--min-specs <n>` minimum specs before consolidation runs (default: `5`)
 - `--force` allow consolidation below the minimum count
-- `--ai-provider codex|claude` override configured provider
-- `--response-file <path>` use precomputed AI JSON response
+- `--ai-provider codex|claude` override the configured provider
+- `--response-file <path>` use precomputed AI response JSON
+
+### index
+`go run ./cmd/canon index [options]`
+
+- `--root <path>` repository root (default: `.`)
+- `--write` write `.canon/index.yaml`; without it, Canon prints YAML to stdout
+
+### check
+`go run ./cmd/canon check [options]`
+
+- `--root <path>` repository root (default: `.`)
+- `--domain <name>` restrict conflict scans to one domain
+- `--spec <id>` check one spec against the remaining in-scope specs
+- `--ai auto|from-response` AI check mode (default: `auto`)
+- `--ai-provider codex|claude` AI provider override
+- `--response-file <path>` JSON response file for replay mode
+- `--json` emit machine-readable JSON
+- `--write` persist conflict reports under `.canon/conflict-reports/`
+
+### blame
+`go run ./cmd/canon blame "<behavior description>"`
+
+- `--root <path>` repository root (default: `.`)
+- `--domain <name>` restrict blame to one domain
+- `--json` machine-readable output
+- `--ai-provider codex|claude` override the configured provider
+- `--response-file <path>` use a precomputed AI response JSON
+
+### deps-risk
+`go run ./cmd/canon deps-risk [options]`
+
+- `--root <path>` repository root containing `go.mod` (default: `.`)
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail when the highest severity meets or exceeds `low`, `medium`, `high`, or `critical`
+
+### schema-evolution
+`go run ./cmd/canon schema-evolution [options]`
+
+- `--root <path>` repository root containing SQL migration files (default: `.`)
+- `--json` emit machine-readable JSON findings and summary
+- `--fail-on <severity>` fail when the highest severity meets or exceeds `low`, `medium`, `high`, or `critical`
+
+### semantic-diff
+`go run ./cmd/canon semantic-diff [options]`
+
+- `--root <path>` repository root used for `git diff` and config (default: `.`)
+- `--diff-file <path>` read unified diff from file instead of `git diff`
+- `--json` emit machine-readable JSON explanations and summary
+- `--ai auto|from-response` AI mode (default: `auto`)
+- `--ai-provider codex|claude` override the configured provider
+- `--response-file <path>` deterministic replay input for `from-response` mode; when paired with the default `--ai auto`, Canon switches to replay mode
+
+### version
+`go run ./cmd/canon version`
+
+- `--short` print the version string only
+- `go run ./cmd/canon --version` and `go run ./cmd/canon -v` are aliases
+
+### help
+`go run ./cmd/canon help`
+
+- `go run ./cmd/canon --help` and `go run ./cmd/canon -h` are aliases
+
+Spec ID convention:
+- Use 7-char SHA-like hex IDs (for example `a1b2c3d`) for consistency with git-style history views.
+- Canon-generated fallback IDs also use the same 7-char SHA-like format.
+
+Blame defaults:
+- `canon blame "<text>"` uses the current directory as root
+- Output defaults to human-readable terminal text
+- The AI provider defaults from config (`./.canonconfig`, then `~/.canonconfig`, then built-in `codex`)
+
 Examples:
 
 ```bash

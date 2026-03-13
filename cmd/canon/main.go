@@ -1209,6 +1209,7 @@ func printUsage() {
 	fmt.Println("  semantic-diff explain semantic behavior changes from repository diffs")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
+	fmt.Println("  help    show usage")
 	fmt.Println()
 	fmt.Println("init options:")
 	fmt.Println("  --root <path>          repository root (default: \".\")")

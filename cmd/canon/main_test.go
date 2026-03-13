@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -56,6 +57,181 @@ func TestVersionCommandRejectsPositionalArgs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "version does not accept positional arguments") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestREADMEDocumentsCurrentCLISurface(t *testing.T) {
+	readme := readRepositoryREADME(t)
+
+	commandListEntries := []string{
+		"- `go run ./cmd/canon init`",
+		"- `go run ./cmd/canon ingest <spec-file>`",
+		"- `go run ./cmd/canon import <spec-file>` (alias for ingest)",
+		"- `go run ./cmd/canon raw`",
+		"- `go run ./cmd/canon log`",
+		"- `go run ./cmd/canon show <spec-id>`",
+		"- `go run ./cmd/canon reset <spec-id>`",
+		"- `go run ./cmd/canon render`",
+		"- `go run ./cmd/canon status`",
+		"- `go run ./cmd/canon gc`",
+		"- `go run ./cmd/canon index`",
+		"- `go run ./cmd/canon check`",
+		"- `go run ./cmd/canon blame \"<behavior description>\"`",
+		"- `go run ./cmd/canon deps-risk`",
+		"- `go run ./cmd/canon schema-evolution`",
+		"- `go run ./cmd/canon semantic-diff`",
+		"- `go run ./cmd/canon version`",
+		"- `go run ./cmd/canon help`",
+	}
+	for _, entry := range commandListEntries {
+		if !strings.Contains(readme, entry) {
+			t.Errorf("README missing command list entry %q", entry)
+		}
+	}
+
+	sectionChecks := []struct {
+		heading string
+		needles []string
+	}{
+		{
+			heading: "init",
+			needles: []string{
+				"`go run ./cmd/canon init [options]`",
+				"`--root <path>` repository root (default: `.`)",
+				"`--include <glob>` additional include pattern (repeatable)",
+			},
+		},
+		{
+			heading: "ingest / import",
+			needles: []string{
+				"`go run ./cmd/canon ingest <spec-file>`",
+				"`--file <path>` pass the source markdown file without using a positional argument",
+				"`--parents <id1,id2,...>` override parent spec ids",
+			},
+		},
+		{
+			heading: "raw",
+			needles: []string{
+				"`go run ./cmd/canon raw --text \"<freeform text>\"`",
+				"`--text <text>` provide the raw text directly; if omitted, Canon prompts for interactive input",
+				"`--depends-on <id1,id2,...>` override dependency ids",
+			},
+		},
+		{
+			heading: "log",
+			needles: []string{
+				"`go run ./cmd/canon log [options]`",
+				"`--all` include all disconnected heads (default: `true`; use `--all=false` to scope to the primary head)",
+				"`--show-tags` include qualified `[type/domain]` tags",
+			},
+		},
+		{
+			heading: "show",
+			needles: []string{
+				"`go run ./cmd/canon show <spec-id>`",
+				"`--root <path>` repository root (default: `.`)",
+			},
+		},
+		{
+			heading: "reset",
+			needles: []string{
+				"`go run ./cmd/canon reset <spec-id>`",
+				"`--root <path>` repository root (default: `.`)",
+			},
+		},
+		{
+			heading: "render",
+			needles: []string{
+				"`go run ./cmd/canon render [options]`",
+				"`--write` write generated artifacts instead of a dry run",
+				"`--ai off|auto|from-response` AI render mode (default: `auto`)",
+			},
+		},
+		{
+			heading: "status",
+			needles: []string{
+				"`go run ./cmd/canon status`",
+				"`--root <path>` repository root (default: `.`)",
+			},
+		},
+		{
+			heading: "gc",
+			needles: []string{
+				"`go run ./cmd/canon gc [options]`",
+				"`--root <path>` repository root (default: `.`)",
+				"`--min-specs <n>` minimum specs before consolidation runs (default: `5`)",
+			},
+		},
+		{
+			heading: "index",
+			needles: []string{
+				"`go run ./cmd/canon index [options]`",
+				"`--root <path>` repository root (default: `.`)",
+				"`--write` write `.canon/index.yaml`; without it, Canon prints YAML to stdout",
+			},
+		},
+		{
+			heading: "check",
+			needles: []string{
+				"`go run ./cmd/canon check [options]`",
+				"`--spec <id>` check one spec against the remaining in-scope specs",
+				"`--write` persist conflict reports under `.canon/conflict-reports/`",
+			},
+		},
+		{
+			heading: "blame",
+			needles: []string{
+				"`go run ./cmd/canon blame \"<behavior description>\"`",
+				"`--root <path>` repository root (default: `.`)",
+				"`--response-file <path>` use a precomputed AI response JSON",
+			},
+		},
+		{
+			heading: "deps-risk",
+			needles: []string{
+				"`go run ./cmd/canon deps-risk [options]`",
+				"`--fail-on <severity>` fail when the highest severity meets or exceeds `low`, `medium`, `high`, or `critical`",
+			},
+		},
+		{
+			heading: "schema-evolution",
+			needles: []string{
+				"`go run ./cmd/canon schema-evolution [options]`",
+				"`--fail-on <severity>` fail when the highest severity meets or exceeds `low`, `medium`, `high`, or `critical`",
+			},
+		},
+		{
+			heading: "semantic-diff",
+			needles: []string{
+				"`go run ./cmd/canon semantic-diff [options]`",
+				"`--diff-file <path>` read unified diff from file instead of `git diff`",
+				"`--response-file <path>` deterministic replay input for `from-response` mode; when paired with the default `--ai auto`, Canon switches to replay mode",
+			},
+		},
+		{
+			heading: "version",
+			needles: []string{
+				"`go run ./cmd/canon version`",
+				"`--short` print the version string only",
+				"`go run ./cmd/canon --version` and `go run ./cmd/canon -v` are aliases",
+			},
+		},
+		{
+			heading: "help",
+			needles: []string{
+				"`go run ./cmd/canon help`",
+				"`go run ./cmd/canon --help` and `go run ./cmd/canon -h` are aliases",
+			},
+		},
+	}
+
+	for _, check := range sectionChecks {
+		section := readmeSection(t, readme, check.heading)
+		for _, needle := range check.needles {
+			if !strings.Contains(section, needle) {
+				t.Errorf("README section %q missing %q", check.heading, needle)
+			}
+		}
 	}
 }
 
@@ -858,6 +1034,38 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("closing reader failed: %v", err)
 	}
 	return string(out)
+}
+
+func readRepositoryREADME(t *testing.T) string {
+	t.Helper()
+
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed for README lookup")
+	}
+
+	readmePath := filepath.Join(filepath.Dir(thisFile), "..", "..", "README.md")
+	content, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	return string(content)
+}
+
+func readmeSection(t *testing.T, readme, heading string) string {
+	t.Helper()
+
+	marker := "### " + heading + "\n"
+	start := strings.Index(readme, marker)
+	if start == -1 {
+		t.Fatalf("README missing section %q", heading)
+	}
+	start += len(marker)
+	remaining := readme[start:]
+	if end := strings.Index(remaining, "\n### "); end >= 0 {
+		return remaining[:end]
+	}
+	return remaining
 }
 
 func TestResetCommandResetsToReferenceSpec(t *testing.T) {
