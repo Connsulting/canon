@@ -10,17 +10,12 @@ permissions:
   contents: write
 
 jobs:
-  verify:
+  version:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
 
       - name: Verify tag matches VERSION
         shell: bash
@@ -34,14 +29,42 @@ jobs:
             exit 1
           fi
 
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+
       - name: Run tests
         run: go test ./...
+
+  vet:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
 
       - name: Run vet
         run: go vet ./...
 
   build:
-    needs: verify
+    needs: [version, test, vet]
     runs-on: ubuntu-latest
 
     strategy:
@@ -66,6 +89,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
 
       - name: Build executable
         id: build

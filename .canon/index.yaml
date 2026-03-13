@@ -33,7 +33,7 @@ specs:
     domain: general
     touches: [general]
     depends_on: [c5e7d91]
-    depended_on_by: []
+    depended_on_by: [f5e2faa]
   8e6a1d2:
     title: "Init Symlink Scan Stability"
     type: technical
@@ -125,11 +125,22 @@ specs:
     touches: [canon-cli]
     depends_on: [c9f6a10, e1bcd34]
     depended_on_by: [c0d3f0f]
+  f5e2faa:
+    title: "Build Time Optimization"
+    type: technical
+    domain: build-system
+    touches: [build-system, ci, release]
+    depends_on: [8cfdb59]
+    depended_on_by: []
 domains:
   ai-runtime:
     specs: [c5e7d91]
+  build-system:
+    specs: [f5e2faa]
   canon-cli:
     specs: [3bb3511, 3fd7c21, 7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
+  ci:
+    specs: [f5e2faa]
   config:
     specs: [a94f2c1, d72f3b8, e1bcd34]
   database:
@@ -143,7 +154,7 @@ domains:
   ledger:
     specs: [c0d3f0f, e1bcd34]
   release:
-    specs: [a1e9c10]
+    specs: [a1e9c10, f5e2faa]
   state-render:
     specs: [b98ed16, c0d3f0f, e1bcd34]
   tools:
@@ -165,3 +176,5 @@ cross_domain_edges:
     domains: [canon-cli, config, ingest]
   - spec: e1bcd34
     domains: [canon-cli, config, ingest, ledger, state-render]
+  - spec: f5e2faa
+    domains: [build-system, ci, release]
