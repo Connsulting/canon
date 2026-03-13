@@ -738,6 +738,12 @@ func TestLogAbsoluteDateRespectsExplicitPrimaryHeadScope(t *testing.T) {
 	if strings.Contains(out, "Spec: auth-a1") {
 		t.Fatalf("did not expect disconnected secondary head in scoped output, got:\n%s", out)
 	}
+	if !strings.Contains(out, "Type: feature") {
+		t.Fatalf("expected detailed Type field in scoped absolute-date output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Domain: billing") {
+		t.Fatalf("expected detailed Domain field in scoped absolute-date output, got:\n%s", out)
+	}
 }
 
 func TestLogAbsoluteDateDefaultPreservesLegacyDetailedOutput(t *testing.T) {

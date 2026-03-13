@@ -324,15 +324,30 @@ func renderDetailedBlock(node LogNode, opts LogOptions) []string {
 	lines := []string{
 		"Spec: " + colorize(opts, "32", node.ID),
 	}
+	showDetailedMetadata := opts.ShowTags || strings.EqualFold(strings.TrimSpace(opts.Date), "absolute")
 	if node.Spec != nil {
 		if strings.TrimSpace(node.Spec.Title) != "" {
 			lines = append(lines, "Title: "+colorize(opts, "33", node.Spec.Title))
 		}
-		if opts.ShowTags && strings.TrimSpace(node.Spec.Type) != "" {
-			lines = append(lines, "Type: "+colorize(opts, "36", node.Spec.Type))
+	}
+	if showDetailedMetadata {
+		typ := ""
+		domain := ""
+		if node.Entry != nil {
+			typ = strings.TrimSpace(node.Entry.Type)
+			domain = strings.TrimSpace(node.Entry.Domain)
 		}
-		if opts.ShowTags && strings.TrimSpace(node.Spec.Domain) != "" {
-			lines = append(lines, "Domain: "+colorize(opts, "34", node.Spec.Domain))
+		if typ == "" && node.Spec != nil {
+			typ = strings.TrimSpace(node.Spec.Type)
+		}
+		if domain == "" && node.Spec != nil {
+			domain = strings.TrimSpace(node.Spec.Domain)
+		}
+		if typ != "" {
+			lines = append(lines, "Type: "+colorize(opts, "36", typ))
+		}
+		if domain != "" {
+			lines = append(lines, "Domain: "+colorize(opts, "34", domain))
 		}
 	}
 	if node.Entry != nil && strings.TrimSpace(node.Entry.IngestedAt) != "" {
