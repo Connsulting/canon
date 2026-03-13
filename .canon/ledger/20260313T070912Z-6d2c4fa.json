@@ -1,0 +1,14 @@
+{
+  "spec_id": "6d2c4fa",
+  "title": "README CLI Documentation Parity Backfill",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "8cfdb59"
+  ],
+  "sequence": 1773385752966323170,
+  "ingested_at": "2026-03-13T07:09:12Z",
+  "content_hash": "afcff08d5493f6a8c64548ad856dab1540fde832c789d8e9078a7951ec89bc72",
+  "spec_path": ".canon/specs/6d2c4fa.spec.md",
+  "source_path": ".canon/sources/6d2c4fa.source.md"
+}

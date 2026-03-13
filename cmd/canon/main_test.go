@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -57,6 +58,57 @@ func TestVersionCommandRejectsPositionalArgs(t *testing.T) {
 	if !strings.Contains(err.Error(), "version does not accept positional arguments") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestREADMECoversCriticalCLIParity(t *testing.T) {
+	readme := readRepoREADME(t)
+
+	commands := readmeSection(t, readme, "## Commands\n", "\nSpec ID convention:")
+	requireContainsAll(t, "commands", commands, []string{
+		"- `go run ./cmd/canon init`",
+		"- `go run ./cmd/canon ingest <spec-file>`",
+		"- `go run ./cmd/canon import <spec-file>` (alias for ingest)",
+		"- `go run ./cmd/canon raw`",
+		"- `go run ./cmd/canon log`",
+		"- `go run ./cmd/canon check`",
+		"- `go run ./cmd/canon show <spec-id>`",
+		"- `go run ./cmd/canon reset <spec-id>`",
+		"- `go run ./cmd/canon index`",
+		"- `go run ./cmd/canon render`",
+		"- `go run ./cmd/canon gc`",
+		"- `go run ./cmd/canon blame \"<behavior description>\"`",
+		"- `go run ./cmd/canon deps-risk`",
+		"- `go run ./cmd/canon schema-evolution`",
+		"- `go run ./cmd/canon semantic-diff`",
+		"- `go run ./cmd/canon status`",
+		"- `go run ./cmd/canon version`",
+		"- `go run ./cmd/canon help`",
+	})
+
+	logOptions := readmeSection(t, readme, "Log options:\n", "\nBlame options:")
+	requireContainsAll(t, "log options", logOptions, []string{
+		"- `--root <path>` repository root (default: `.`)",
+		"- `--all` include all disconnected heads (default: `true`; use `--all=false` to scope to the primary head)",
+		"- `--show-tags` include qualified `[type/domain]` tags",
+	})
+
+	gcOptions := readmeSection(t, readme, "GC options:\n", "\nIndex options:")
+	requireContainsAll(t, "gc options", gcOptions, []string{
+		"- `--root <path>` repository root (default: `.`)",
+		"- `--write` execute consolidation (default is dry run)",
+		"- `--min-specs <n>` minimum specs before consolidation runs (default: `5`)",
+	})
+
+	indexOptions := readmeSection(t, readme, "Index options:\n", "\nVersion options:")
+	requireContainsAll(t, "index options", indexOptions, []string{
+		"- `--root <path>` repository root (default: `.`)",
+		"- `--write` write `.canon/index.yaml` instead of printing YAML to stdout",
+	})
+
+	versionOptions := readmeSection(t, readme, "Version options:\n", "\nExamples:")
+	requireContainsAll(t, "version options", versionOptions, []string{
+		"- `--short` print version only",
+	})
 }
 
 func TestRenderDefaultsToAIRenderAndWritesStateFolder(t *testing.T) {
@@ -729,6 +781,52 @@ func TestLogDefaultsUseRelativeDatesAndAllHeads(t *testing.T) {
 	relativeDate := regexp.MustCompile(`\b(ago|just now|in moments|from now)\b`)
 	if !relativeDate.MatchString(out) {
 		t.Fatalf("expected relative date output by default, got:\n%s", out)
+	}
+}
+
+func readRepoREADME(t *testing.T) string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+
+	path := filepath.Join(filepath.Dir(file), "..", "..", "README.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	return string(data)
+}
+
+func readmeSection(t *testing.T, readme, start, end string) string {
+	t.Helper()
+
+	startIdx := strings.Index(readme, start)
+	if startIdx == -1 {
+		t.Fatalf("README section start %q not found", start)
+	}
+	startIdx += len(start)
+
+	endIdx := strings.Index(readme[startIdx:], end)
+	if endIdx == -1 {
+		t.Fatalf("README section end %q not found after %q", end, start)
+	}
+	return readme[startIdx : startIdx+endIdx]
+}
+
+func requireContainsAll(t *testing.T, name, got string, wants []string) {
+	t.Helper()
+
+	var missing []string
+	for _, want := range wants {
+		if !strings.Contains(got, want) {
+			missing = append(missing, want)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("%s missing README content: %v", name, missing)
 	}
 }
 
