@@ -1,6 +1,7 @@
 package canon
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -16,6 +17,13 @@ var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 
 func nowUTC() time.Time {
 	return time.Now().UTC()
+}
+
+func commandContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout > 0 {
+		return context.WithTimeout(context.Background(), timeout)
+	}
+	return context.WithCancel(context.Background())
 }
 
 func normalizeList(values []string) []string {
@@ -101,21 +109,6 @@ func inferTitle(body string) string {
 		}
 	}
 	return "Untitled Spec"
-}
-
-func parseCSV(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		v := strings.TrimSpace(part)
-		if v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 func parseRFC3339OrNow(value string) (string, error) {

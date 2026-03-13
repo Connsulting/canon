@@ -384,13 +384,7 @@ func runHeadlessAISemanticDiff(provider string, root string, input SemanticDiffI
 		responseFile.Close()
 		defer func() { _ = os.Remove(responsePath) }()
 
-		ctx := context.Background()
-		cancel := func() {}
-		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		} else {
-			ctx, cancel = context.WithCancel(context.Background())
-		}
+		ctx, cancel := commandContext(timeout)
 		defer cancel()
 
 		cmd := exec.CommandContext(
@@ -423,13 +417,7 @@ func runHeadlessAISemanticDiff(provider string, root string, input SemanticDiffI
 		return decodeAISemanticDiffResponse(responseBytes)
 
 	case "claude":
-		ctx := context.Background()
-		cancel := func() {}
-		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		} else {
-			ctx, cancel = context.WithCancel(context.Background())
-		}
+		ctx, cancel := commandContext(timeout)
 		defer cancel()
 
 		cmd := exec.CommandContext(

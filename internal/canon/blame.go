@@ -330,13 +330,7 @@ func runHeadlessAIBlame(provider string, root string, query string, domain strin
 		responseFile.Close()
 		defer func() { _ = os.Remove(responsePath) }()
 
-		ctx := context.Background()
-		cancel := func() {}
-		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		} else {
-			ctx, cancel = context.WithCancel(context.Background())
-		}
+		ctx, cancel := commandContext(timeout)
 		defer cancel()
 		cmd := exec.CommandContext(
 			ctx,
@@ -368,13 +362,7 @@ func runHeadlessAIBlame(provider string, root string, query string, domain strin
 		return decodeAIBlameResponse(responseBytes)
 
 	case "claude":
-		ctx := context.Background()
-		cancel := func() {}
-		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		} else {
-			ctx, cancel = context.WithCancel(context.Background())
-		}
+		ctx, cancel := commandContext(timeout)
 		defer cancel()
 		cmd := exec.CommandContext(
 			ctx,
