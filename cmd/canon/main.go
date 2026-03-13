@@ -1204,6 +1204,7 @@ func printUsage() {
 	fmt.Println("  schema-evolution scan SQL migrations for potentially breaking schema changes")
 	fmt.Println("  semantic-diff explain semantic behavior changes from repository diffs")
 	fmt.Println("  status  show repository summary")
+	fmt.Println("  help    show command usage")
 	fmt.Println("  version print CLI version")
 	fmt.Println()
 	fmt.Println("init options:")

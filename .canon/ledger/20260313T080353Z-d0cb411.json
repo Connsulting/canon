@@ -1,0 +1,14 @@
+{
+  "spec_id": "d0cb411",
+  "title": "Documentation Backfiller",
+  "type": "technical",
+  "domain": "canon-cli",
+  "parents": [
+    "8cfdb59"
+  ],
+  "sequence": 1773389033410732175,
+  "ingested_at": "2026-03-13T08:03:53Z",
+  "content_hash": "423c8c59f68f76dc89893f97fcbd29913566156a26fcd871f9ae2cc4eea60cdc",
+  "spec_path": ".canon/specs/d0cb411.spec.md",
+  "source_path": ".canon/sources/d0cb411.source.md"
+}

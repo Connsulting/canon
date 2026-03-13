@@ -18,13 +18,16 @@ Phase 1 only:
 - `go run ./cmd/canon check`
 - `go run ./cmd/canon show <spec-id>`
 - `go run ./cmd/canon reset <spec-id>`
+- `go run ./cmd/canon index`
 - `go run ./cmd/canon render --write`
+- `go run ./cmd/canon gc`
 - `go run ./cmd/canon blame "<behavior description>"`
 - `go run ./cmd/canon deps-risk`
 - `go run ./cmd/canon schema-evolution`
 - `go run ./cmd/canon semantic-diff`
 - `go run ./cmd/canon status`
-- `go run ./cmd/canon gc`
+- `go run ./cmd/canon help`
+- `go run ./cmd/canon version`
 
 Spec ID convention:
 - Use 7-char SHA-like hex IDs (for example `a1b2c3d`) for consistency with git-style history views.
@@ -35,13 +38,22 @@ Render options:
 - `--ai-provider codex|claude` (default from config)
 - `--response-file <path>` (required for `from-response`; implied when provided with `auto`)
 
+Index options:
+- `--root <path>` repository root (default: `.`)
+- `--write` write `.canon/index.yaml` instead of printing it
+
+Version options:
+- `--short` print version only
+
 Log options:
+- `--root <path>` repository root (default: `.`)
 - `--graph` render dependency graph view from `depends_on`
 - `--oneline` compact one-line rows
-- `--all` include all disconnected heads (default scopes to primary head)
+- `--all` include all disconnected heads (default: enabled; pass `--all=false` to scope to primary head)
 - `--grep <text>` case-insensitive title filter
 - `--domain <name>` exact domain filter
 - `--type <name>` exact type filter
+- `--show-tags` include qualified [type/domain] tags
 - `--color auto|always|never` ANSI color output (default: `auto`)
 - `--date absolute|relative` timestamp display mode (default: `relative`)
 - `-n <count>` max rows (defaults to 50)
@@ -85,6 +97,7 @@ Semantic diff options:
 - `--response-file <path>` deterministic replay input for `from-response` mode (implied when provided with `auto`)
 
 GC options:
+- `--root <path>` repository root (default: `.`)
 - `--domain <name>` consolidate all specs in one domain
 - `--specs <id1,id2,...>` consolidate specific specs by id
 - `--write` execute consolidation (default is dry run)

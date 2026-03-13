@@ -59,6 +59,41 @@ func TestVersionCommandRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestREADMECoversCriticalCLIParityPoints(t *testing.T) {
+	readmePath := filepath.Join("..", "..", "README.md")
+	readmeBytes, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("read README failed: %v", err)
+	}
+	readme := string(readmeBytes)
+
+	for _, command := range []string{
+		"- `go run ./cmd/canon help`",
+		"- `go run ./cmd/canon index`",
+		"- `go run ./cmd/canon version`",
+	} {
+		if !strings.Contains(readme, command) {
+			t.Fatalf("README missing command entry %q", command)
+		}
+	}
+
+	requireREADMESectionContains(t, readme, "Index options:", "Version options:",
+		"- `--root <path>` repository root (default: `.`)",
+		"- `--write` write `.canon/index.yaml` instead of printing it",
+	)
+	requireREADMESectionContains(t, readme, "Version options:", "Log options:",
+		"- `--short` print version only",
+	)
+	requireREADMESectionContains(t, readme, "Log options:", "Blame options:",
+		"- `--root <path>` repository root (default: `.`)",
+		"- `--all` include all disconnected heads (default: enabled; pass `--all=false` to scope to primary head)",
+		"- `--show-tags` include qualified [type/domain] tags",
+	)
+	requireREADMESectionContains(t, readme, "GC options:", "Examples:",
+		"- `--root <path>` repository root (default: `.`)",
+	)
+}
+
 func TestRenderDefaultsToAIRenderAndWritesStateFolder(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
@@ -759,6 +794,25 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("closing reader failed: %v", err)
 	}
 	return string(out)
+}
+
+func requireREADMESectionContains(t *testing.T, readme, start, end string, needles ...string) {
+	t.Helper()
+
+	startIndex := strings.Index(readme, start)
+	if startIndex == -1 {
+		t.Fatalf("README missing section header %q", start)
+	}
+	endIndex := strings.Index(readme[startIndex:], end)
+	if endIndex == -1 {
+		t.Fatalf("README missing section terminator %q after %q", end, start)
+	}
+	section := readme[startIndex : startIndex+endIndex]
+	for _, needle := range needles {
+		if !strings.Contains(section, needle) {
+			t.Fatalf("README section %q missing %q", start, needle)
+		}
+	}
 }
 
 func TestResetCommandResetsToReferenceSpec(t *testing.T) {
