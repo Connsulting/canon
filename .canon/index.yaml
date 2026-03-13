@@ -33,7 +33,7 @@ specs:
     domain: general
     touches: [general]
     depends_on: [c5e7d91]
-    depended_on_by: [f5e2faa]
+    depended_on_by: []
   8e6a1d2:
     title: "Init Symlink Scan Stability"
     type: technical
@@ -54,7 +54,7 @@ specs:
     domain: release
     touches: [release]
     depends_on: [a94f2c1]
-    depended_on_by: [8e6a1d2]
+    depended_on_by: [8e6a1d2, f5e2faa]
   a94f2c1:
     title: "Canon Init: AI-Powered Project Initialization"
     type: feature
@@ -130,7 +130,7 @@ specs:
     type: technical
     domain: build-system
     touches: [build-system, ci, release]
-    depends_on: [8cfdb59]
+    depends_on: [a1e9c10]
     depended_on_by: []
 domains:
   ai-runtime:

@@ -4,7 +4,7 @@ type: technical
 title: "Build Time Optimization"
 domain: build-system
 created: 2026-03-13T00:00:00Z
-depends_on: [8cfdb59]
+depends_on: [a1e9c10]
 touched_domains: [build-system, ci, release]
 ---
 # Build Time Optimization Draft Spec

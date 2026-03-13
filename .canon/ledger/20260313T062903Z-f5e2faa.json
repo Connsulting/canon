@@ -4,11 +4,11 @@
   "type": "technical",
   "domain": "build-system",
   "parents": [
-    "8cfdb59"
+    "a1e9c10"
   ],
-  "sequence": 1773382469467857525,
-  "ingested_at": "2026-03-13T06:14:29Z",
-  "content_hash": "641cdb4526e2d3fbb78abd8d702a08abb6e7037a7fcfbbe4afe2c147a2ef9e87",
+  "sequence": 1773383343943416927,
+  "ingested_at": "2026-03-13T06:29:03Z",
+  "content_hash": "6aad5a32256f1203beaa395e70597c25e654e2e0a03de4027ca01bddcad0bb28",
   "spec_path": ".canon/specs/f5e2faa.spec.md",
   "source_path": ".canon/sources/f5e2faa.source.md"
 }
