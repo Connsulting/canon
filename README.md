@@ -30,6 +30,21 @@ Spec ID convention:
 - Use 7-char SHA-like hex IDs (for example `a1b2c3d`) for consistency with git-style history views.
 - Canon-generated fallback IDs also use the same 7-char SHA-like format.
 
+Init options:
+- `--ai off|auto` (default: `auto`)
+- `--ai-provider codex|claude` (default from config)
+- `--crawl snapshot|agentic` (default: `snapshot`)
+- `--response-file <path>` deterministic replay input for `from-response` mode
+- `--no-interactive` / `--accept-all` to ingest generated drafts without prompts
+- `--max-specs <n>` maximum specs to generate
+- `--context-limit <kb>` initial bundled context size in `snapshot` mode, or seed inventory size in `agentic` mode
+- `--include <glob>` additional scan include pattern (repeatable)
+- `--exclude <glob>` additional scan exclude pattern (repeatable)
+
+Init crawl modes:
+- `snapshot` keeps the existing bounded prompt flow using a preassembled project context.
+- `agentic` sends a lightweight seed inventory and instructs the provider to inspect repository files directly as needed before generating specs.
+
 Render options:
 - `--ai off|auto|from-response` (default: `auto`)
 - `--ai-provider codex|claude` (default from config)

@@ -1,0 +1,14 @@
+{
+  "spec_id": "6a7c9d4",
+  "title": "Init Gitignore-Aware Scan",
+  "type": "technical",
+  "domain": "init",
+  "parents": [
+    "8cfdb59"
+  ],
+  "sequence": 1775904047361389858,
+  "ingested_at": "2026-04-11T10:40:47Z",
+  "content_hash": "626a25a19c9a698e3da2b6100e8801a18b620f1772dffd2eab9eaf0192b1413d",
+  "spec_path": ".canon/specs/6a7c9d4.spec.md",
+  "source_path": ".canon/sources/6a7c9d4.source.md"
+}

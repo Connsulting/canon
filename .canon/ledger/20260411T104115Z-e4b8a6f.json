@@ -1,0 +1,14 @@
+{
+  "spec_id": "e4b8a6f",
+  "title": "Canon Init Agentic Crawl Mode",
+  "type": "feature",
+  "domain": "init",
+  "parents": [
+    "6a7c9d4"
+  ],
+  "sequence": 1775904075553443742,
+  "ingested_at": "2026-04-11T10:41:15Z",
+  "content_hash": "fdb61b7ecdbcd664fea1f1f04ca04937d4b8e4ec0d454786278684ed51cb311b",
+  "spec_path": ".canon/specs/e4b8a6f.spec.md",
+  "source_path": ".canon/sources/e4b8a6f.source.md"
+}

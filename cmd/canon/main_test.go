@@ -221,6 +221,80 @@ func TestInitCommandResponseFileAcceptAllIngestsSpecs(t *testing.T) {
 	}
 }
 
+func TestInitCommandAgenticCrawlAcceptAllIngestsSpecs(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n\nCurrent behavior.\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cmd"), 0o755); err != nil {
+		t.Fatalf("mkdir cmd failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write cmd/main.go failed: %v", err)
+	}
+
+	binDir := t.TempDir()
+	promptPath := filepath.Join(root, "captured-init-prompt.txt")
+	writeCLIInitCodex(t, filepath.Join(binDir, "codex"))
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PROMPT_CAPTURE", promptPath)
+	t.Setenv("HOME", t.TempDir())
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"init", "--root", root, "--crawl", "agentic", "--accept-all"}); err != nil {
+			t.Fatalf("init command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Crawl mode: agentic") {
+		t.Fatalf("expected crawl mode output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "included in seed inventory") {
+		t.Fatalf("expected seed inventory output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Agentic mode may inspect additional repository files directly during AI decomposition.") {
+		t.Fatalf("expected agentic inspection messaging, got:\n%s", out)
+	}
+	if !strings.Contains(out, "layout ready at") {
+		t.Fatalf("expected final layout message, got:\n%s", out)
+	}
+
+	promptBytes, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("read prompt failed: %v", err)
+	}
+	prompt := string(promptBytes)
+	if !strings.Contains(prompt, "Crawl mode: agentic") {
+		t.Fatalf("expected agentic prompt marker")
+	}
+	if !strings.Contains(prompt, "inspect the repository directly using local tools as needed") {
+		t.Fatalf("expected agentic crawl instructions in prompt")
+	}
+	if strings.Contains(prompt, "## File: ") {
+		t.Fatalf("did not expect bundled file sections in agentic prompt")
+	}
+
+	specs, err := canon.LoadSpecsForCLI(root)
+	if err != nil {
+		t.Fatalf("LoadSpecsForCLI failed: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("expected 1 ingested spec, got %d", len(specs))
+	}
+}
+
+func TestInitCommandRejectsInvalidCrawlMode(t *testing.T) {
+	root := t.TempDir()
+	err := run([]string{"init", "--root", root, "--crawl", "weird", "--ai", "off"})
+	if err == nil {
+		t.Fatalf("expected invalid crawl mode error")
+	}
+	if !strings.Contains(err.Error(), "unsupported init crawl mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGcCommandDryRunNoWrite(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
@@ -1474,6 +1548,50 @@ func writeGCResponse(t *testing.T, path string, payload map[string]any) {
 	}
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatalf("failed writing gc response: %v", err)
+	}
+}
+
+func writeCLIInitCodex(t *testing.T, path string) {
+	t.Helper()
+	script := `#!/bin/sh
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+
+if [ -z "$out" ]; then
+  echo "missing output path" >&2
+  exit 2
+fi
+
+cat > "$PROMPT_CAPTURE"
+
+cat <<'JSON' > "$out"
+{
+  "model": "codex-headless",
+  "project_summary": "sample",
+  "specs": [
+    {
+      "id": "a1a1a1a",
+      "type": "technical",
+      "title": "Project Overview",
+      "domain": "general",
+      "depends_on": [],
+      "touched_domains": ["general"],
+      "body": "The project exposes current behavior.",
+      "review_hint": "overview"
+    }
+  ]
+}
+JSON
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed writing fake init codex binary: %v", err)
 	}
 }
 
