@@ -22,6 +22,9 @@ const (
 	initDefaultContextKB    = 100
 	initDefaultMaxFileBytes = 50 * 1024
 	initDefaultCrawlMode    = "snapshot"
+	initMultipassMaxAreas   = 16
+	initMultipassMaxFiles   = 12
+	initMultipassMaxList    = 200
 	initTreeDepth           = 3
 	initPreviewLines        = 20
 )
@@ -69,6 +72,20 @@ type aiInitSpec struct {
 	ReviewHint     string   `json:"review_hint"`
 }
 
+type aiInitAreaResponse struct {
+	Model              string   `json:"model"`
+	Area               string   `json:"area"`
+	Summary            string   `json:"summary"`
+	Components         []string `json:"components"`
+	UserFacingFeatures []string `json:"user_facing_features"`
+	TechnicalBehaviors []string `json:"technical_behaviors"`
+	RuntimeWiring      []string `json:"runtime_wiring"`
+	RisksOrGaps        []string `json:"risks_or_gaps"`
+	EvidenceFiles      []string `json:"evidence_files"`
+	SupportOnly        bool     `json:"support_only"`
+	OmissionReason     string   `json:"omission_reason"`
+}
+
 type initDraftSpec struct {
 	Spec       Spec
 	ReviewHint string
@@ -100,11 +117,25 @@ type initScanReport struct {
 	AllProjectFiles []string
 }
 
+type initCrawlArea struct {
+	Name  string
+	Files []string
+}
+
 type ignorePattern struct {
 	Pattern  string
 	Negated  bool
 	DirOnly  bool
 	Anchored bool
+}
+
+func isSupportedInitCrawlMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "snapshot", "agentic", "multipass":
+		return true
+	default:
+		return false
+	}
 }
 
 func Init(root string, options InitOptions) (InitResult, error) {
@@ -146,7 +177,7 @@ func Init(root string, options InitOptions) (InitResult, error) {
 	if crawlMode == "" {
 		crawlMode = initDefaultCrawlMode
 	}
-	if crawlMode != "snapshot" && crawlMode != "agentic" {
+	if !isSupportedInitCrawlMode(crawlMode) {
 		return InitResult{}, fmt.Errorf("unsupported init crawl mode: %s", crawlMode)
 	}
 	maxSpecs := options.MaxSpecs
@@ -180,13 +211,9 @@ func Init(root string, options InitOptions) (InitResult, error) {
 	seedContext := scan.Context
 	seedIncluded := scan.IncludedFiles
 	seedBytes := scan.ContextBytes
-	includedLabel := "included in context"
-	sizeLabel := "Context size"
 	if crawlMode == "agentic" {
 		seedContext, seedIncluded = buildInitAgenticSeed(scan, contextLimitKB*1024)
 		seedBytes = len(seedContext)
-		includedLabel = "included in seed inventory"
-		sizeLabel = "Seed inventory size"
 	}
 
 	result := InitResult{
@@ -197,10 +224,22 @@ func Init(root string, options InitOptions) (InitResult, error) {
 	}
 
 	fmt.Fprintf(out, "  Crawl mode: %s\n", crawlMode)
-	fmt.Fprintf(out, "  Found %d files (%d %s, %d excluded)\n", scan.FoundFiles, seedIncluded, includedLabel, scan.ExcludedFiles)
-	fmt.Fprintf(out, "  %s: %d KB / %d KB limit\n", sizeLabel, seedBytes/1024, contextLimitKB)
-	if crawlMode == "agentic" {
+	switch crawlMode {
+	case "snapshot":
+		fmt.Fprintf(out, "  Found %d files (%d included in context, %d excluded)\n", scan.FoundFiles, seedIncluded, scan.ExcludedFiles)
+		fmt.Fprintf(out, "  Context size: %d KB / %d KB limit\n", seedBytes/1024, contextLimitKB)
+	case "agentic":
+		fmt.Fprintf(out, "  Found %d files (%d included in seed inventory, %d excluded)\n", scan.FoundFiles, seedIncluded, scan.ExcludedFiles)
+		fmt.Fprintf(out, "  Seed inventory size: %d KB / %d KB limit\n", seedBytes/1024, contextLimitKB)
 		fmt.Fprintln(out, "  Agentic mode may inspect additional repository files directly during AI decomposition.")
+	case "multipass":
+		areas := buildInitCrawlAreas(scan.AllProjectFiles, initMultipassMaxAreas)
+		result.IncludedFiles = len(scan.AllProjectFiles)
+		result.ContextBytes = contextLimitKB * 1024
+		fmt.Fprintf(out, "  Found %d files (%d available for multipass crawl after filtering)\n", scan.FoundFiles, len(scan.AllProjectFiles))
+		fmt.Fprintf(out, "  Per-area evidence limit: %d KB\n", contextLimitKB)
+		fmt.Fprintf(out, "  Planned crawl areas: %d\n", len(areas))
+		fmt.Fprintln(out, "  Canon will analyze planned areas before final spec synthesis.")
 	}
 
 	noProjectContext := strings.TrimSpace(seedContext) == ""
@@ -231,7 +270,11 @@ func Init(root string, options InitOptions) (InitResult, error) {
 			result.FallbackUsed = true
 			break
 		}
-		aiResponse, err = runHeadlessAIInit(provider, root, scan, existing, maxSpecs, crawlMode, seedContext)
+		if crawlMode == "multipass" {
+			aiResponse, err = runHeadlessAIMultipassInit(provider, root, scan, existing, maxSpecs, contextLimitKB*1024, out)
+		} else {
+			aiResponse, err = runHeadlessAIInit(provider, root, scan, existing, maxSpecs, crawlMode, seedContext)
+		}
 		if err != nil {
 			fmt.Fprintf(out, "  Warning: AI decomposition unavailable (%v). Falling back to README bootstrap spec.\n", err)
 			aiResponse = fallbackAIInitResponse(scan)
@@ -902,6 +945,205 @@ func selectInitInventoryPaths(files []string, max int) []string {
 	return out
 }
 
+func buildInitCrawlAreas(files []string, maxAreas int) []initCrawlArea {
+	groups := make(map[string][]string)
+	for _, rel := range files {
+		clean := strings.Trim(strings.TrimSpace(filepath.ToSlash(rel)), "/")
+		if clean == "" {
+			continue
+		}
+		area := initCrawlAreaName(clean)
+		groups[area] = append(groups[area], clean)
+	}
+
+	areas := make([]initCrawlArea, 0, len(groups))
+	for name, areaFiles := range groups {
+		sort.Strings(areaFiles)
+		areas = append(areas, initCrawlArea{Name: name, Files: areaFiles})
+	}
+	sort.Slice(areas, func(i, j int) bool {
+		leftPriority := initCrawlAreaPriority(areas[i])
+		rightPriority := initCrawlAreaPriority(areas[j])
+		if leftPriority == rightPriority {
+			if len(areas[i].Files) == len(areas[j].Files) {
+				return areas[i].Name < areas[j].Name
+			}
+			return len(areas[i].Files) > len(areas[j].Files)
+		}
+		return leftPriority < rightPriority
+	})
+
+	if maxAreas <= 0 || len(areas) <= maxAreas {
+		return areas
+	}
+	if maxAreas == 1 {
+		combined := combineInitCrawlAreas("other", areas)
+		return []initCrawlArea{combined}
+	}
+	kept := append([]initCrawlArea{}, areas[:maxAreas-1]...)
+	kept = append(kept, combineInitCrawlAreas("other", areas[maxAreas-1:]))
+	return kept
+}
+
+func initCrawlAreaName(rel string) string {
+	parts := strings.Split(rel, "/")
+	if len(parts) <= 1 {
+		return "root"
+	}
+	return parts[0]
+}
+
+func initCrawlAreaPriority(area initCrawlArea) int {
+	score := 100
+	switch area.Name {
+	case "root":
+		score = 0
+	case "docs":
+		score = 5
+	case ".github", ".gitlab":
+		score = 15
+	case "cmd", "app", "src", "internal", "pkg", "lib", "api", "server", "client", "frontend", "backend", "amplify", "cdk", "infra", "infrastructure":
+		score = 20
+	case "test", "tests", "e2e", "__tests__":
+		score = 50
+	case "scripts", "tools":
+		score = 60
+	default:
+		score = 70
+	}
+	for _, rel := range area.Files {
+		if priority := initFilePriority(rel); priority < score {
+			score = priority
+		}
+	}
+	return score
+}
+
+func combineInitCrawlAreas(name string, areas []initCrawlArea) initCrawlArea {
+	combined := initCrawlArea{Name: name}
+	for _, area := range areas {
+		combined.Files = append(combined.Files, area.Files...)
+	}
+	sort.Strings(combined.Files)
+	return combined
+}
+
+func buildInitAreaEvidencePack(root string, area initCrawlArea, limit int) (string, []string, error) {
+	if limit <= 0 {
+		limit = initDefaultContextKB * 1024
+	}
+
+	var pack strings.Builder
+	appendChunk := func(chunk string) bool {
+		if chunk == "" {
+			return true
+		}
+		if pack.Len()+len(chunk) <= limit {
+			pack.WriteString(chunk)
+			return true
+		}
+		remaining := limit - pack.Len()
+		if remaining <= 256 {
+			return false
+		}
+		pack.WriteString(truncateText(chunk, remaining))
+		return false
+	}
+
+	appendChunk("# Canon Init Multipass Area Evidence\n\n")
+	appendChunk("Area: " + area.Name + "\n")
+	appendChunk(fmt.Sprintf("Filtered file count: %d\n\n", len(area.Files)))
+	appendChunk("## Area File Inventory\n")
+	for i, rel := range area.Files {
+		if i >= initMultipassMaxList {
+			appendChunk(fmt.Sprintf("- ... %d more files\n", len(area.Files)-i))
+			break
+		}
+		if !appendChunk("- " + rel + "\n") {
+			return pack.String(), nil, nil
+		}
+	}
+	appendChunk("\n## Evidence File Excerpts\n")
+
+	selected := make([]string, 0, initMultipassMaxFiles)
+	for _, rel := range rankedInitAreaFiles(area.Files) {
+		if len(selected) >= initMultipassMaxFiles {
+			break
+		}
+		content, truncated, ok, err := readInitEvidenceFile(root, rel)
+		if err != nil {
+			return "", nil, err
+		}
+		if !ok {
+			continue
+		}
+		section := strings.Builder{}
+		section.WriteString("\n### ")
+		section.WriteString(rel)
+		section.WriteString("\n```")
+		section.WriteString("\n")
+		section.WriteString(content)
+		if !strings.HasSuffix(content, "\n") {
+			section.WriteString("\n")
+		}
+		section.WriteString("```\n")
+		if truncated {
+			section.WriteString("(excerpt truncated)\n")
+		}
+		if !appendChunk(section.String()) {
+			break
+		}
+		selected = append(selected, rel)
+	}
+
+	return pack.String(), selected, nil
+}
+
+func rankedInitAreaFiles(files []string) []string {
+	ranked := append([]string{}, files...)
+	sort.Slice(ranked, func(i, j int) bool {
+		leftPriority := initFilePriority(ranked[i])
+		rightPriority := initFilePriority(ranked[j])
+		if leftPriority == rightPriority {
+			return ranked[i] < ranked[j]
+		}
+		return leftPriority < rightPriority
+	})
+	return ranked
+}
+
+func readInitEvidenceFile(root string, rel string) (string, bool, bool, error) {
+	if isLikelyBinaryPath(rel) {
+		return "", false, false, nil
+	}
+	pathAbs := filepath.Join(root, filepath.FromSlash(rel))
+	info, err := os.Stat(pathAbs)
+	if err != nil {
+		return "", false, false, err
+	}
+	if info.IsDir() || info.Size() > initDefaultMaxFileBytes {
+		return "", false, false, nil
+	}
+	b, err := os.ReadFile(pathAbs)
+	if err != nil {
+		return "", false, false, err
+	}
+	if isBinaryContent(b) {
+		return "", false, false, nil
+	}
+	content := string(b)
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	maxBytes := maxBytesForPriority(initFilePriority(rel))
+	truncated := false
+	if len(content) > maxBytes {
+		content = truncateText(content, maxBytes)
+		truncated = true
+	}
+	return content, truncated, true, nil
+}
+
 func buildInitContext(tree string, candidates []initScanCandidate, limit int) (string, int) {
 	if limit <= 0 {
 		limit = initDefaultContextKB * 1024
@@ -1115,13 +1357,65 @@ func orderInitDraftsByDependencies(drafts []initDraftSpec) []initDraftSpec {
 
 func runHeadlessAIInit(provider string, root string, scan initScanReport, existing []Spec, maxSpecs int, crawlMode string, seedContext string) (aiInitResponse, error) {
 	prompt := buildAIInitPrompt(provider, crawlMode, scan, existing, maxSpecs, seedContext)
-	schema := aiInitJSONSchema()
+	output, err := runHeadlessJSONPrompt(provider, root, aiInitJSONSchema(), prompt)
+	if err != nil {
+		return aiInitResponse{}, err
+	}
+	return decodeAIInitResponse(output)
+}
 
+func runHeadlessAIMultipassInit(provider string, root string, scan initScanReport, existing []Spec, maxSpecs int, evidenceLimit int, out io.Writer) (aiInitResponse, error) {
+	areas := buildInitCrawlAreas(scan.AllProjectFiles, initMultipassMaxAreas)
+	if len(areas) == 0 {
+		return aiInitResponse{}, fmt.Errorf("multipass crawl found no areas")
+	}
+
+	if out == nil {
+		out = io.Discard
+	}
+	fmt.Fprintf(out, "  Planning managed crawl: %d areas\n", len(areas))
+
+	analyses := make([]aiInitAreaResponse, 0, len(areas))
+	for i, area := range areas {
+		evidence, selected, err := buildInitAreaEvidencePack(root, area, evidenceLimit)
+		if err != nil {
+			return aiInitResponse{}, fmt.Errorf("build evidence for area %s: %w", area.Name, err)
+		}
+		fmt.Fprintf(out, "  Analyzing area %d/%d: %s (%d files, %d evidence paths)\n", i+1, len(areas), area.Name, len(area.Files), len(selected))
+
+		prompt := buildAIInitAreaPrompt(provider, area, selected, evidence)
+		output, err := runHeadlessJSONPrompt(provider, root, aiInitAreaJSONSchema(), prompt)
+		if err != nil {
+			return aiInitResponse{}, fmt.Errorf("analyze area %s: %w", area.Name, err)
+		}
+		analysis, err := decodeAIInitAreaResponse(output)
+		if err != nil {
+			return aiInitResponse{}, fmt.Errorf("decode analysis for area %s: %w", area.Name, err)
+		}
+		if strings.TrimSpace(analysis.Area) == "" {
+			analysis.Area = area.Name
+		}
+		if len(analysis.EvidenceFiles) == 0 {
+			analysis.EvidenceFiles = selected
+		}
+		analyses = append(analyses, analysis)
+	}
+
+	fmt.Fprintln(out, "  Synthesizing specs from area analyses...")
+	prompt := buildAIInitMultipassSynthesisPrompt(provider, scan, existing, maxSpecs, areas, analyses)
+	output, err := runHeadlessJSONPrompt(provider, root, aiInitJSONSchema(), prompt)
+	if err != nil {
+		return aiInitResponse{}, err
+	}
+	return decodeAIInitResponse(output)
+}
+
+func runHeadlessJSONPrompt(provider string, root string, schema string, prompt string) ([]byte, error) {
 	switch provider {
 	case "codex":
 		schemaFile, err := os.CreateTemp("", "canon-init-schema-*.json")
 		if err != nil {
-			return aiInitResponse{}, err
+			return nil, err
 		}
 		schemaPath := schemaFile.Name()
 		defer func() {
@@ -1129,15 +1423,15 @@ func runHeadlessAIInit(provider string, root string, scan initScanReport, existi
 			_ = os.Remove(schemaPath)
 		}()
 		if _, err := schemaFile.WriteString(schema); err != nil {
-			return aiInitResponse{}, err
+			return nil, err
 		}
 		if err := schemaFile.Close(); err != nil {
-			return aiInitResponse{}, err
+			return nil, err
 		}
 
 		responseFile, err := os.CreateTemp("", "canon-init-response-*.json")
 		if err != nil {
-			return aiInitResponse{}, err
+			return nil, err
 		}
 		responsePath := responseFile.Name()
 		responseFile.Close()
@@ -1158,13 +1452,13 @@ func runHeadlessAIInit(provider string, root string, scan initScanReport, existi
 		cmd.Stdin = strings.NewReader(prompt)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return aiInitResponse{}, fmt.Errorf("codex exec failed: %w\n%s", err, strings.TrimSpace(string(output)))
+			return nil, fmt.Errorf("codex exec failed: %w\n%s", err, strings.TrimSpace(string(output)))
 		}
 		b, err := os.ReadFile(responsePath)
 		if err != nil {
-			return aiInitResponse{}, err
+			return nil, err
 		}
-		return decodeAIInitResponse(b)
+		return b, nil
 
 	case "claude":
 		cmd := exec.Command(
@@ -1179,11 +1473,11 @@ func runHeadlessAIInit(provider string, root string, scan initScanReport, existi
 		cmd.Dir = root
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return aiInitResponse{}, fmt.Errorf("claude --print failed: %w\n%s", err, strings.TrimSpace(string(output)))
+			return nil, fmt.Errorf("claude --print failed: %w\n%s", err, strings.TrimSpace(string(output)))
 		}
-		return decodeAIInitResponse(output)
+		return output, nil
 	default:
-		return aiInitResponse{}, fmt.Errorf("unsupported ai provider: %s", provider)
+		return nil, fmt.Errorf("unsupported ai provider: %s", provider)
 	}
 }
 
@@ -1293,6 +1587,156 @@ func buildAIInitAgenticPrompt(provider string, scan initScanReport, existing []S
 	return appendExistingInitSpecs(lines, existing)
 }
 
+func buildAIInitAreaPrompt(provider string, area initCrawlArea, selected []string, evidence string) string {
+	lines := []string{
+		"# Canon Init Area Analysis",
+		"",
+		"Provider: " + provider,
+		"Crawl mode: multipass",
+		"Area: " + area.Name,
+		"",
+		"Task:",
+		"1. Analyze only the current behavior evidenced by this area pack.",
+		"2. Identify important components, user-facing features, technical behaviors, runtime wiring, and risks or gaps.",
+		"3. Use evidence_files to list concrete paths that support your findings.",
+		"4. Set support_only=true when this area is only tooling, generated artifacts, or otherwise should not become a dedicated Canon spec.",
+		"5. Do not modify repository files.",
+		"6. Return JSON only following the schema.",
+		"",
+		"Schema:",
+		"{",
+		`  "model": "string",`,
+		`  "area": "string",`,
+		`  "summary": "string",`,
+		`  "components": ["string"],`,
+		`  "user_facing_features": ["string"],`,
+		`  "technical_behaviors": ["string"],`,
+		`  "runtime_wiring": ["string"],`,
+		`  "risks_or_gaps": ["string"],`,
+		`  "evidence_files": ["string"],`,
+		`  "support_only": false,`,
+		`  "omission_reason": "string"`,
+		"}",
+		"",
+		"Selected evidence paths:",
+	}
+	if len(selected) == 0 {
+		lines = append(lines, "- (none)")
+	} else {
+		for _, rel := range selected {
+			lines = append(lines, "- "+rel)
+		}
+	}
+	lines = append(lines,
+		"",
+		"## Area Evidence Pack",
+		"",
+		evidence,
+		"",
+	)
+	return strings.Join(lines, "\n")
+}
+
+func buildAIInitMultipassSynthesisPrompt(provider string, scan initScanReport, existing []Spec, maxSpecs int, areas []initCrawlArea, analyses []aiInitAreaResponse) string {
+	lines := []string{
+		"# Canon Init AI Decomposition",
+		"",
+		"Provider: " + provider,
+		"Crawl mode: multipass",
+		"",
+		"Task:",
+		"1. Synthesize final Canon specs from Canon-managed area analyses.",
+		"2. Produce between 2 and " + strconv.Itoa(maxSpecs) + " specs that capture current project behavior.",
+		"3. Use feature specs for user-facing behavior and technical specs for architecture or infrastructure concerns.",
+		"4. Use depends_on and touched_domains when appropriate.",
+		"5. Describe current behavior only. Do not propose future work.",
+		"6. Ensure major analyzed areas are represented by at least one spec or intentionally omitted as support-only.",
+		"7. Do not invent behavior that is not supported by the area summaries and evidence paths.",
+		"8. Include concrete current-state behavior details in each body, not only high-level summaries.",
+		"9. Return JSON only following the schema.",
+		"",
+		"Repository scan summary:",
+		fmt.Sprintf("- Available files after filtering: %d", len(scan.AllProjectFiles)),
+		fmt.Sprintf("- Excluded during local scan: %d", scan.ExcludedFiles),
+		fmt.Sprintf("- Planned crawl areas: %d", len(areas)),
+		"",
+		"Schema:",
+		"{",
+		`  "model": "string",`,
+		`  "project_summary": "string",`,
+		`  "specs": [`,
+		`    {`,
+		`      "id": "7-char-hex",`,
+		`      "type": "feature|technical",`,
+		`      "title": "string",`,
+		`      "domain": "string",`,
+		`      "depends_on": ["spec-id"],`,
+		`      "touched_domains": ["domain"],`,
+		`      "body": "markdown",`,
+		`      "review_hint": "string"`,
+		`    }`,
+		`  ]`,
+		"}",
+		"",
+		"## Area Coverage",
+	}
+	for _, area := range areas {
+		lines = append(lines, fmt.Sprintf("- %s: %d filtered files", area.Name, len(area.Files)))
+	}
+	lines = append(lines, "", "## Area Analyses", "")
+	for _, analysis := range analyses {
+		lines = append(lines,
+			"### "+analysis.Area,
+			"",
+			"Summary: "+strings.TrimSpace(analysis.Summary),
+			"Support only: "+strconv.FormatBool(analysis.SupportOnly),
+		)
+		if strings.TrimSpace(analysis.OmissionReason) != "" {
+			lines = append(lines, "Omission reason: "+strings.TrimSpace(analysis.OmissionReason))
+		}
+		lines = append(lines,
+			"",
+			"Components:",
+			renderInitPromptList(analysis.Components),
+			"",
+			"User-facing features:",
+			renderInitPromptList(analysis.UserFacingFeatures),
+			"",
+			"Technical behaviors:",
+			renderInitPromptList(analysis.TechnicalBehaviors),
+			"",
+			"Runtime wiring:",
+			renderInitPromptList(analysis.RuntimeWiring),
+			"",
+			"Risks or gaps:",
+			renderInitPromptList(analysis.RisksOrGaps),
+			"",
+			"Evidence files:",
+			renderInitPromptList(analysis.EvidenceFiles),
+			"",
+		)
+	}
+	return appendExistingInitSpecs(lines, existing)
+}
+
+func renderInitPromptList(values []string) string {
+	if len(values) == 0 {
+		return "- (none)"
+	}
+	lines := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		lines = append(lines, "- "+trimmed)
+	}
+	if len(lines) == 0 {
+		return "- (none)"
+	}
+	return strings.Join(lines, "\n")
+}
+
 func appendExistingInitSpecs(lines []string, existing []Spec) string {
 	lines = append(lines,
 		"## Existing Canonical Specs",
@@ -1348,6 +1792,45 @@ func aiInitJSONSchema() string {
 }`
 }
 
+func aiInitAreaJSONSchema() string {
+	return `{
+  "type": "object",
+  "required": ["model", "area", "summary", "components", "user_facing_features", "technical_behaviors", "runtime_wiring", "risks_or_gaps", "evidence_files", "support_only", "omission_reason"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {"type": "string"},
+    "area": {"type": "string"},
+    "summary": {"type": "string"},
+    "components": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "user_facing_features": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "technical_behaviors": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "runtime_wiring": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "risks_or_gaps": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "evidence_files": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "support_only": {"type": "boolean"},
+    "omission_reason": {"type": "string"}
+  }
+}`
+}
+
 func parseAIInitResponse(root string, responseFile string) (aiInitResponse, error) {
 	b, err := readAIResponseFile(root, responseFile)
 	if err != nil {
@@ -1361,6 +1844,10 @@ func parseAIInitResponse(root string, responseFile string) (aiInitResponse, erro
 
 func decodeAIInitResponse(b []byte) (aiInitResponse, error) {
 	return decodeAIResponseJSON[aiInitResponse](b, "invalid AI init response JSON")
+}
+
+func decodeAIInitAreaResponse(b []byte) (aiInitAreaResponse, error) {
+	return decodeAIResponseJSON[aiInitAreaResponse](b, "invalid AI init area response JSON")
 }
 
 func loadGitignorePatterns(root string) ([]ignorePattern, error) {

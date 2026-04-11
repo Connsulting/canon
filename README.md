@@ -33,17 +33,18 @@ Spec ID convention:
 Init options:
 - `--ai off|auto` (default: `auto`)
 - `--ai-provider codex|claude` (default from config)
-- `--crawl snapshot|agentic` (default: `snapshot`)
+- `--crawl snapshot|agentic|multipass` (default: `snapshot`)
 - `--response-file <path>` deterministic replay input for `from-response` mode
 - `--no-interactive` / `--accept-all` to ingest generated drafts without prompts
 - `--max-specs <n>` maximum specs to generate
-- `--context-limit <kb>` initial bundled context size in `snapshot` mode, or seed inventory size in `agentic` mode
+- `--context-limit <kb>` initial bundled context size in `snapshot` mode, seed inventory size in `agentic` mode, or per-area evidence size in `multipass` mode
 - `--include <glob>` additional scan include pattern (repeatable)
 - `--exclude <glob>` additional scan exclude pattern (repeatable)
 
 Init crawl modes:
 - `snapshot` keeps the existing bounded prompt flow using a preassembled project context.
 - `agentic` sends a lightweight seed inventory and instructs the provider to inspect repository files directly as needed before generating specs.
+- `multipass` lets Canon plan top-level crawl areas, request bounded per-area analyses, and synthesize final specs from the collected coverage summaries.
 
 Render options:
 - `--ai off|auto|from-response` (default: `auto`)
