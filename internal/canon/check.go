@@ -119,9 +119,14 @@ func Check(root string, opts CheckOptions) (CheckResult, error) {
 		return conflicts[i].SpecA < conflicts[j].SpecA
 	})
 
+	readinessScope := scoped
+	if targetID != "" {
+		readinessScope = []Spec{specByID[targetID]}
+	}
+
 	result.Conflicts = conflicts
 	result.TotalConflicts = len(conflicts)
-	result.ReadinessGaps = collectReadinessGaps(scoped)
+	result.ReadinessGaps = collectReadinessGaps(readinessScope)
 	result.TotalReadinessGaps = len(result.ReadinessGaps)
 	result.Passed = result.TotalConflicts == 0 && result.TotalReadinessGaps == 0
 

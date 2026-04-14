@@ -270,6 +270,67 @@ Known problem.`,
 	}
 }
 
+func TestCheckSpecFilterIgnoresUnrelatedReadinessGaps(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCheckSpec(t, root, Spec{
+		ID:             "ok",
+		Type:           "feature",
+		Title:          "Ready Technical Spec",
+		Domain:         "product",
+		Created:        "2026-04-14T10:00:00Z",
+		TouchedDomains: []string{"product"},
+		Body:           "Technical helper specs do not need product readiness metadata.",
+	})
+	writeCheckSpec(t, root, Spec{
+		ID:              "gap",
+		Type:            "feature",
+		Title:           "Incomplete Product Requirement",
+		Domain:          "product",
+		Created:         "2026-04-14T10:01:00Z",
+		RequirementKind: "product",
+		ApprovalState:   "draft",
+		TouchedDomains:  []string{"product"},
+		Body: `## Problem statement
+Known problem.`,
+	})
+
+	responsePath := writeAICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []map[string]any{},
+		},
+	})
+
+	targeted, err := Check(root, CheckOptions{
+		SpecID:       "ok",
+		AIMode:       "from-response",
+		ResponseFile: responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check spec filter failed: %v", err)
+	}
+	if !targeted.Passed || targeted.TotalReadinessGaps != 0 {
+		t.Fatalf("expected targeted check to ignore unrelated readiness gaps, got %+v", targeted)
+	}
+
+	full, err := Check(root, CheckOptions{
+		AIMode:       "from-response",
+		ResponseFile: responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check full scope failed: %v", err)
+	}
+	if full.Passed || full.TotalReadinessGaps == 0 {
+		t.Fatalf("expected full check to report readiness gaps, got %+v", full)
+	}
+}
+
 func TestCheckWriteCreatesConflictReports(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {
