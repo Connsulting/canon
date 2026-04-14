@@ -619,6 +619,11 @@ func cmdStatus(args []string) error {
 		return err
 	}
 
+	fmt.Printf("repository health: %s\n", status.Layout.Health)
+	if status.Layout.Health == canon.LayoutRepairable {
+		fmt.Printf("missing support directories: %s\n", strings.Join(status.Layout.MissingSupport, ", "))
+		fmt.Printf("repair: canon init --root %s --ai off\n", filepath.ToSlash(abs))
+	}
 	fmt.Printf("total specs: %d\n", status.TotalSpecs)
 	fmt.Printf("feature specs: %d\n", status.FeatureSpecs)
 	fmt.Printf("technical specs: %d\n", status.TechnicalSpecs)
