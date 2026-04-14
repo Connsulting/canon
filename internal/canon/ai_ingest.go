@@ -16,14 +16,17 @@ type aiIngestResponse struct {
 }
 
 type aiCanonicalSpec struct {
-	ID             string   `json:"id"`
-	Type           string   `json:"type"`
-	Title          string   `json:"title"`
-	Domain         string   `json:"domain"`
-	Created        string   `json:"created"`
-	DependsOn      []string `json:"depends_on"`
-	TouchedDomains []string `json:"touched_domains"`
-	Body           string   `json:"body"`
+	ID              string   `json:"id"`
+	Type            string   `json:"type"`
+	Title           string   `json:"title"`
+	Domain          string   `json:"domain"`
+	Created         string   `json:"created"`
+	RequirementKind string   `json:"requirement_kind"`
+	SourceIssue     string   `json:"source_issue"`
+	ApprovalState   string   `json:"approval_state"`
+	DependsOn       []string `json:"depends_on"`
+	TouchedDomains  []string `json:"touched_domains"`
+	Body            string   `json:"body"`
 }
 
 type aiIngestConflictCheck struct {
@@ -181,6 +184,9 @@ func buildAIIngestPrompt(provider string, existing []Spec, rawText string, input
 		`    "title": "string",`,
 		`    "domain": "string",`,
 		`    "created": "RFC3339 timestamp",`,
+		`    "requirement_kind": "product|technical_helper|",`,
+		`    "source_issue": "string",`,
+		`    "approval_state": "approved|draft|unknown|",`,
 		`    "depends_on": ["spec-id"],`,
 		`    "touched_domains": ["domain"],`,
 		`    "body": "markdown"`,
@@ -248,6 +254,15 @@ func ensureAIResponseDefaults(response aiIngestResponse, provisional Spec) aiIng
 	if strings.TrimSpace(response.CanonicalSpec.Created) == "" {
 		response.CanonicalSpec.Created = provisional.Created
 	}
+	if strings.TrimSpace(response.CanonicalSpec.RequirementKind) == "" {
+		response.CanonicalSpec.RequirementKind = provisional.RequirementKind
+	}
+	if strings.TrimSpace(response.CanonicalSpec.SourceIssue) == "" {
+		response.CanonicalSpec.SourceIssue = provisional.SourceIssue
+	}
+	if strings.TrimSpace(response.CanonicalSpec.ApprovalState) == "" {
+		response.CanonicalSpec.ApprovalState = provisional.ApprovalState
+	}
 	if len(response.CanonicalSpec.DependsOn) == 0 {
 		response.CanonicalSpec.DependsOn = provisional.DependsOn
 	}
@@ -281,14 +296,17 @@ func canonicalSpecFromAIResponse(response aiIngestResponse, rawText string, inpu
 		body = mergeSourceAndAIBody(rawText, body)
 	}
 	spec := Spec{
-		ID:             strings.TrimSpace(response.CanonicalSpec.ID),
-		Type:           strings.TrimSpace(response.CanonicalSpec.Type),
-		Title:          strings.TrimSpace(response.CanonicalSpec.Title),
-		Domain:         strings.TrimSpace(response.CanonicalSpec.Domain),
-		Created:        strings.TrimSpace(response.CanonicalSpec.Created),
-		DependsOn:      normalizeList(response.CanonicalSpec.DependsOn),
-		TouchedDomains: normalizeList(response.CanonicalSpec.TouchedDomains),
-		Body:           body,
+		ID:              strings.TrimSpace(response.CanonicalSpec.ID),
+		Type:            strings.TrimSpace(response.CanonicalSpec.Type),
+		Title:           strings.TrimSpace(response.CanonicalSpec.Title),
+		Domain:          strings.TrimSpace(response.CanonicalSpec.Domain),
+		Created:         strings.TrimSpace(response.CanonicalSpec.Created),
+		RequirementKind: strings.TrimSpace(response.CanonicalSpec.RequirementKind),
+		SourceIssue:     strings.TrimSpace(response.CanonicalSpec.SourceIssue),
+		ApprovalState:   strings.TrimSpace(response.CanonicalSpec.ApprovalState),
+		DependsOn:       normalizeList(response.CanonicalSpec.DependsOn),
+		TouchedDomains:  normalizeList(response.CanonicalSpec.TouchedDomains),
+		Body:            body,
 	}
 	if strings.TrimSpace(input.Created) == "" {
 		spec.Created = strings.TrimSpace(provisional.Created)
@@ -381,6 +399,9 @@ func aiIngestJSONSchema() string {
         "title": {"type": "string"},
         "domain": {"type": "string"},
         "created": {"type": "string"},
+        "requirement_kind": {"type": "string"},
+        "source_issue": {"type": "string"},
+        "approval_state": {"type": "string"},
         "depends_on": {"type": "array", "items": {"type": "string"}},
         "touched_domains": {"type": "array", "items": {"type": "string"}},
         "body": {"type": "string"}

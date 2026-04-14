@@ -114,6 +114,40 @@ func TestBuildLogViewFilters(t *testing.T) {
 	}
 }
 
+func TestBuildLogViewFiltersByRequirementKind(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	if _, err := Ingest(root, IngestInput{Text: completeProductRequirementText("req-product")}); err != nil {
+		t.Fatalf("product ingest failed: %v", err)
+	}
+	ingestLogSpec(t, root, "spec-tech", "Technical Helper", "product", "technical", "2026-04-14T11:00:00Z", nil, []string{"ghost-tech"})
+
+	nodes, err := BuildLogView(root, LogOptions{
+		Limit:           50,
+		OneLine:         true,
+		All:             true,
+		RequirementKind: "product",
+		ShowTags:        true,
+	})
+	if err != nil {
+		t.Fatalf("BuildLogView failed: %v", err)
+	}
+
+	got := realNodeIDs(nodes)
+	want := []string{"req-product"}
+	if !equalStringSlices(got, want) {
+		t.Fatalf("requirement-kind filter mismatch: got %v want %v", got, want)
+	}
+
+	text := RenderLogText(nodes, LogOptions{OneLine: true, ShowTags: true})
+	if !strings.Contains(text, "[feature/product/product]") {
+		t.Fatalf("expected requirement kind in tags, got:\n%s", text)
+	}
+}
+
 func TestRenderLogTextGraphIncludesEdges(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {

@@ -8,17 +8,18 @@ import (
 )
 
 type LogOptions struct {
-	Limit    int
-	Graph    bool
-	OneLine  bool
-	All      bool
-	Grep     string
-	Domain   string
-	Type     string
-	Color    string
-	IsTTY    bool
-	Date     string
-	ShowTags bool
+	Limit           int
+	Graph           bool
+	OneLine         bool
+	All             bool
+	Grep            string
+	Domain          string
+	Type            string
+	RequirementKind string
+	Color           string
+	IsTTY           bool
+	Date            string
+	ShowTags        bool
 }
 
 type LogNode struct {
@@ -301,7 +302,14 @@ func renderOneLine(node LogNode, opts LogOptions) string {
 		colorize(opts, "33", title),
 	)
 	if opts.ShowTags {
-		line += fmt.Sprintf(" [%s/%s]", colorize(opts, "36", typ), colorize(opts, "34", domain))
+		tags := []string{
+			colorize(opts, "36", typ),
+			colorize(opts, "34", domain),
+		}
+		if node.Spec != nil && strings.TrimSpace(node.Spec.RequirementKind) != "" {
+			tags = append(tags, colorize(opts, "35", strings.TrimSpace(node.Spec.RequirementKind)))
+		}
+		line += fmt.Sprintf(" [%s]", strings.Join(tags, "/"))
 	}
 	if when != "" {
 		line += " " + colorize(opts, "35", when)
@@ -333,6 +341,9 @@ func renderDetailedBlock(node LogNode, opts LogOptions) []string {
 		}
 		if opts.ShowTags && strings.TrimSpace(node.Spec.Domain) != "" {
 			lines = append(lines, "Domain: "+colorize(opts, "34", node.Spec.Domain))
+		}
+		if opts.ShowTags && strings.TrimSpace(node.Spec.RequirementKind) != "" {
+			lines = append(lines, "RequirementKind: "+colorize(opts, "35", node.Spec.RequirementKind))
 		}
 	}
 	if node.Entry != nil && strings.TrimSpace(node.Entry.IngestedAt) != "" {
@@ -450,6 +461,7 @@ func filteredSpecIDs(specByID map[string]Spec, scope map[string]struct{}, opts L
 	grep := strings.ToLower(strings.TrimSpace(opts.Grep))
 	domain := strings.TrimSpace(opts.Domain)
 	typ := strings.TrimSpace(opts.Type)
+	requirementKind := strings.TrimSpace(opts.RequirementKind)
 
 	for id := range scope {
 		spec, ok := specByID[id]
@@ -460,6 +472,9 @@ func filteredSpecIDs(specByID map[string]Spec, scope map[string]struct{}, opts L
 			continue
 		}
 		if typ != "" && !strings.EqualFold(spec.Type, typ) {
+			continue
+		}
+		if requirementKind != "" && !strings.EqualFold(spec.RequirementKind, requirementKind) {
 			continue
 		}
 		if grep != "" && !strings.Contains(strings.ToLower(spec.Title), grep) {

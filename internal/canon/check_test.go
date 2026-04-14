@@ -220,6 +220,56 @@ func TestCheckSupportsDomainAndSpecFilters(t *testing.T) {
 	}
 }
 
+func TestCheckReportsProductRequirementReadinessGaps(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCheckSpec(t, root, Spec{
+		ID:              "req-gap",
+		Type:            "feature",
+		Title:           "Incomplete Product Requirement",
+		Domain:          "product",
+		Created:         "2026-04-14T10:00:00Z",
+		RequirementKind: "product",
+		ApprovalState:   "draft",
+		TouchedDomains:  []string{"product"},
+		Body: `## Problem statement
+Known problem.`,
+	})
+
+	responsePath := writeAICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []map[string]any{},
+		},
+	})
+
+	result, err := Check(root, CheckOptions{
+		AIMode:       "from-response",
+		ResponseFile: responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+	if result.Passed {
+		t.Fatalf("expected readiness gaps to fail check")
+	}
+	if result.TotalConflicts != 0 {
+		t.Fatalf("expected no conflicts, got %d", result.TotalConflicts)
+	}
+	if result.TotalReadinessGaps == 0 {
+		t.Fatalf("expected readiness gaps")
+	}
+	got := formatReadinessGapMessages(result.ReadinessGaps)
+	if !strings.Contains(got, "source_issue is required") || !strings.Contains(got, "approval_state must be approved") {
+		t.Fatalf("missing expected readiness gaps:\n%s", got)
+	}
+}
+
 func TestCheckWriteCreatesConflictReports(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {

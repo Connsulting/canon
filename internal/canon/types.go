@@ -1,30 +1,36 @@
 package canon
 
 type Spec struct {
-	ID             string
-	Type           string
-	Title          string
-	Domain         string
-	Created        string
-	DependsOn      []string
-	TouchedDomains []string
-	Consolidates   []string
-	Path           string
-	Body           string
+	ID              string
+	Type            string
+	Title           string
+	Domain          string
+	Created         string
+	RequirementKind string
+	SourceIssue     string
+	ApprovalState   string
+	DependsOn       []string
+	TouchedDomains  []string
+	Consolidates    []string
+	Path            string
+	Body            string
 }
 
 type LedgerEntry struct {
-	SpecID      string   `json:"spec_id"`
-	Title       string   `json:"title"`
-	Type        string   `json:"type"`
-	Domain      string   `json:"domain"`
-	Operation   string   `json:"operation,omitempty"`
-	Parents     []string `json:"parents"`
-	Sequence    int64    `json:"sequence"`
-	IngestedAt  string   `json:"ingested_at"`
-	ContentHash string   `json:"content_hash"`
-	SpecPath    string   `json:"spec_path"`
-	SourcePath  string   `json:"source_path"`
+	SpecID          string   `json:"spec_id"`
+	Title           string   `json:"title"`
+	Type            string   `json:"type"`
+	Domain          string   `json:"domain"`
+	RequirementKind string   `json:"requirement_kind,omitempty"`
+	SourceIssue     string   `json:"source_issue,omitempty"`
+	ApprovalState   string   `json:"approval_state,omitempty"`
+	Operation       string   `json:"operation,omitempty"`
+	Parents         []string `json:"parents"`
+	Sequence        int64    `json:"sequence"`
+	IngestedAt      string   `json:"ingested_at"`
+	ContentHash     string   `json:"content_hash"`
+	SpecPath        string   `json:"spec_path"`
+	SourcePath      string   `json:"source_path"`
 }
 
 type IngestInput struct {
@@ -122,12 +128,21 @@ type CheckConflict struct {
 	OverlapDomains []string `json:"-"`
 }
 
+type CheckReadinessGap struct {
+	SpecID  string `json:"spec_id"`
+	Title   string `json:"title"`
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
 type CheckResult struct {
-	Passed         bool            `json:"passed"`
-	TotalSpecs     int             `json:"total_specs"`
-	TotalConflicts int             `json:"total_conflicts"`
-	Conflicts      []CheckConflict `json:"conflicts"`
-	ReportPaths    []string        `json:"report_paths,omitempty"`
+	Passed             bool                `json:"passed"`
+	TotalSpecs         int                 `json:"total_specs"`
+	TotalConflicts     int                 `json:"total_conflicts"`
+	TotalReadinessGaps int                 `json:"total_readiness_gaps"`
+	Conflicts          []CheckConflict     `json:"conflicts"`
+	ReadinessGaps      []CheckReadinessGap `json:"readiness_gaps"`
+	ReportPaths        []string            `json:"report_paths,omitempty"`
 }
 
 type DependencyRiskSeverity string

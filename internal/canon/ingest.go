@@ -55,6 +55,9 @@ func Ingest(root string, input IngestInput) (IngestResult, error) {
 			return IngestResult{}, err
 		}
 	}
+	if gaps := ProductRequirementReadinessGaps(spec); len(gaps) > 0 {
+		return IngestResult{}, fmt.Errorf("product requirement readiness gaps: %s", formatReadinessGapMessages(gaps))
+	}
 
 	ledgerEntries, err := LoadLedger(root)
 	if err != nil {
@@ -88,16 +91,19 @@ func Ingest(root string, input IngestInput) (IngestResult, error) {
 	}
 
 	entry := LedgerEntry{
-		SpecID:      spec.ID,
-		Title:       spec.Title,
-		Type:        spec.Type,
-		Domain:      spec.Domain,
-		Parents:     parents,
-		Sequence:    now.UnixNano(),
-		IngestedAt:  now.Format(timeRFC3339),
-		ContentHash: checksum(specText),
-		SpecPath:    specRelPath,
-		SourcePath:  sourceRelPath,
+		SpecID:          spec.ID,
+		Title:           spec.Title,
+		Type:            spec.Type,
+		Domain:          spec.Domain,
+		RequirementKind: spec.RequirementKind,
+		SourceIssue:     spec.SourceIssue,
+		ApprovalState:   spec.ApprovalState,
+		Parents:         parents,
+		Sequence:        now.UnixNano(),
+		IngestedAt:      now.Format(timeRFC3339),
+		ContentHash:     checksum(specText),
+		SpecPath:        specRelPath,
+		SourcePath:      sourceRelPath,
 	}
 
 	entryBytes, err := json.MarshalIndent(entry, "", "  ")
@@ -259,6 +265,9 @@ func normalizeSpecDefaults(spec Spec) (Spec, error) {
 	spec.Created = created
 	spec.DependsOn = normalizeList(spec.DependsOn)
 	spec.TouchedDomains = mustInclude(spec.TouchedDomains, spec.Domain)
+	spec.RequirementKind = strings.TrimSpace(spec.RequirementKind)
+	spec.SourceIssue = strings.TrimSpace(spec.SourceIssue)
+	spec.ApprovalState = strings.TrimSpace(spec.ApprovalState)
 	spec.Body = strings.TrimSpace(spec.Body)
 	if spec.Body == "" {
 		spec.Body = "(No body content)"

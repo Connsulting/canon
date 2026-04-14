@@ -1067,6 +1067,55 @@ func TestCheckCommandJSONAndExitCodeOnConflicts(t *testing.T) {
 	}
 }
 
+func TestCheckCommandJSONAndExitCodeOnReadinessGaps(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCLIProductRequirementSpec(t, root, "req-gap", "draft", "", `## Problem statement
+Known problem.`)
+	responsePath := writeCLICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []map[string]any{},
+		},
+	})
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"check", "--root", root, "--json", "--response-file", responsePath})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected non zero behavior when readiness gaps are detected")
+	}
+
+	var payload struct {
+		Passed             bool `json:"passed"`
+		TotalConflicts     int  `json:"total_conflicts"`
+		TotalReadinessGaps int  `json:"total_readiness_gaps"`
+		ReadinessGaps      []struct {
+			SpecID  string `json:"spec_id"`
+			Field   string `json:"field"`
+			Message string `json:"message"`
+		} `json:"readiness_gaps"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\n%s", err, out)
+	}
+	if payload.Passed {
+		t.Fatalf("expected failed check payload")
+	}
+	if payload.TotalConflicts != 0 || payload.TotalReadinessGaps == 0 {
+		t.Fatalf("unexpected check payload: %+v", payload)
+	}
+	if len(payload.ReadinessGaps) == 0 || payload.ReadinessGaps[0].SpecID != "req-gap" {
+		t.Fatalf("expected readiness gap for req-gap: %+v", payload.ReadinessGaps)
+	}
+}
+
 func TestCheckCommandWriteCreatesConflictReport(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
@@ -1450,6 +1499,28 @@ touched_domains: [` + domain + `]
 	path := filepath.Join(root, ".canon", "specs", id+".spec.md")
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatalf("failed writing check spec %s: %v", id, err)
+	}
+}
+
+func writeCLIProductRequirementSpec(t *testing.T, root string, id string, approvalState string, sourceIssue string, body string) {
+	t.Helper()
+	text := `---
+id: ` + id + `
+type: feature
+title: Product Requirement
+domain: product
+created: 2026-04-14T00:00:00Z
+depends_on: []
+touched_domains: [product]
+requirement_kind: product
+source_issue: ` + sourceIssue + `
+approval_state: ` + approvalState + `
+---
+` + body + `
+`
+	path := filepath.Join(root, ".canon", "specs", id+".spec.md")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatalf("failed writing product requirement spec %s: %v", id, err)
 	}
 }
 

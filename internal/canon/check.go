@@ -42,10 +42,12 @@ func Check(root string, opts CheckOptions) (CheckResult, error) {
 
 	scoped := filterCheckSpecsByDomain(specs, opts.Domain)
 	result := CheckResult{
-		Passed:         true,
-		TotalSpecs:     len(scoped),
-		TotalConflicts: 0,
-		Conflicts:      []CheckConflict{},
+		Passed:             true,
+		TotalSpecs:         len(scoped),
+		TotalConflicts:     0,
+		TotalReadinessGaps: 0,
+		Conflicts:          []CheckConflict{},
+		ReadinessGaps:      []CheckReadinessGap{},
 	}
 
 	targetID := strings.TrimSpace(opts.SpecID)
@@ -119,7 +121,9 @@ func Check(root string, opts CheckOptions) (CheckResult, error) {
 
 	result.Conflicts = conflicts
 	result.TotalConflicts = len(conflicts)
-	result.Passed = result.TotalConflicts == 0
+	result.ReadinessGaps = collectReadinessGaps(scoped)
+	result.TotalReadinessGaps = len(result.ReadinessGaps)
+	result.Passed = result.TotalConflicts == 0 && result.TotalReadinessGaps == 0
 
 	if opts.Write && result.TotalConflicts > 0 {
 		reportBuckets := map[string][]specConflict{}
