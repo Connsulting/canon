@@ -1107,6 +1107,7 @@ func cmdCheck(args []string) error {
 	root := fs.String("root", ".", "repository root")
 	domain := fs.String("domain", "", "restrict check scope to one domain")
 	specID := fs.String("spec", "", "check one spec id against others in scope")
+	candidateFile := fs.String("file", "", "check a candidate spec file against canonical specs without ingesting it")
 	aiMode := fs.String("ai", "auto", "AI check mode: auto, from-response")
 	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
 	responseFile := fs.String("response-file", "", "JSON response file from headless AI check run")
@@ -1140,12 +1141,13 @@ func cmdCheck(args []string) error {
 	}
 
 	result, err := canon.CheckForCLI(abs, canon.CheckOptions{
-		Domain:       strings.TrimSpace(*domain),
-		SpecID:       strings.TrimSpace(*specID),
-		Write:        *write,
-		AIMode:       mode,
-		AIProvider:   provider,
-		ResponseFile: strings.TrimSpace(*responseFile),
+		Domain:        strings.TrimSpace(*domain),
+		SpecID:        strings.TrimSpace(*specID),
+		CandidateFile: strings.TrimSpace(*candidateFile),
+		Write:         *write,
+		AIMode:        mode,
+		AIProvider:    provider,
+		ResponseFile:  strings.TrimSpace(*responseFile),
 	})
 	if err != nil {
 		return err
