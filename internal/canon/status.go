@@ -1,31 +1,48 @@
 package canon
 
 type Status struct {
-	TotalSpecs              int
-	FeatureSpecs            int
-	TechnicalSpecs          int
-	ResolutionSpecs         int
-	Domains                 int
-	CrossDomainInteractions int
-	LedgerEntries           int
-	LedgerHeads             int
+	Root                    string   `json:"root"`
+	Healthy                 bool     `json:"healthy"`
+	LayoutOK                bool     `json:"layout_ok"`
+	LayoutRepairRequired    bool     `json:"layout_repair_required"`
+	LayoutRepairCommand     string   `json:"layout_repair_command,omitempty"`
+	MissingLayoutPaths      []string `json:"missing_layout_paths"`
+	TotalSpecs              int      `json:"total_specs"`
+	FeatureSpecs            int      `json:"feature_specs"`
+	TechnicalSpecs          int      `json:"technical_specs"`
+	ResolutionSpecs         int      `json:"resolution_specs"`
+	Domains                 int      `json:"domains"`
+	CrossDomainInteractions int      `json:"cross_domain_interactions"`
+	LedgerEntries           int      `json:"ledger_entries"`
+	LedgerHeads             int      `json:"ledger_heads"`
 }
 
 func GetStatus(root string) (Status, error) {
-	if err := EnsureLayout(root, false); err != nil {
-		return Status{}, err
+	missing, err := MissingLayoutPaths(root)
+	st := Status{
+		Root:               root,
+		LayoutOK:           len(missing) == 0 && err == nil,
+		MissingLayoutPaths: missing,
+	}
+	st.Healthy = st.LayoutOK
+	if !st.LayoutOK {
+		st.LayoutRepairRequired = true
+		st.LayoutRepairCommand = "canon init --ai off"
+		if err != nil {
+			return st, err
+		}
+		return st, layoutMissingError(missing)
 	}
 	specs, err := loadSpecs(root)
 	if err != nil {
-		return Status{}, err
+		return st, err
 	}
 	index := buildIndex(specs)
 	entries, err := LoadLedger(root)
 	if err != nil {
-		return Status{}, err
+		return st, err
 	}
 
-	st := Status{}
 	for _, spec := range specs {
 		st.TotalSpecs++
 		switch spec.Type {

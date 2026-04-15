@@ -20,11 +20,31 @@ var embeddedVersion string
 
 var version = resolvedVersion(embeddedVersion)
 
+type renderJSONOutput struct {
+	Write            bool              `json:"write"`
+	AIMode           string            `json:"ai_mode"`
+	AIProvider       string            `json:"ai_provider"`
+	FilesRemoved     int               `json:"files_removed"`
+	FilesUpdated     int               `json:"files_updated"`
+	FilesWritten     int               `json:"files_written"`
+	DomainCount      int               `json:"domain_count"`
+	DomainChecksums  map[string]string `json:"domain_checksums,omitempty"`
+	AIUsed           bool              `json:"ai_used"`
+	AIFallback       bool              `json:"ai_fallback"`
+	AIFallbackReason string            `json:"ai_fallback_reason,omitempty"`
+}
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func writeJSON(value any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(value)
 }
 
 func run(args []string) error {
@@ -164,6 +184,7 @@ func cmdIngest(args []string) error {
 	parents := fs.String("parents", "", "comma separated parent spec ids")
 	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
 	responseFile := fs.String("response-file", "", "JSON response file from headless AI run")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -217,6 +238,9 @@ func cmdIngest(args []string) error {
 		return err
 	}
 
+	if *jsonOut {
+		return writeJSON(result)
+	}
 	fmt.Printf("ingested %s\n", result.SpecID)
 	fmt.Printf("spec: %s\n", result.SpecPath)
 	fmt.Printf("ledger: %s\n", result.LedgerPath)
@@ -456,6 +480,7 @@ func cmdRender(args []string) error {
 	aiMode := fs.String("ai", "auto", "AI render mode: off, auto, from-response")
 	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
 	responseFile := fs.String("response-file", "", "JSON response file from headless AI render run")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -475,6 +500,9 @@ func cmdRender(args []string) error {
 	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
 		mode = "from-response"
 	}
+	if mode != "off" && mode != "auto" && mode != "from-response" {
+		return fmt.Errorf("invalid --ai mode %q (expected one of: off, auto, from-response)", strings.TrimSpace(*aiMode))
+	}
 
 	aiProvider := cfg.AI.Provider
 	if strings.TrimSpace(*aiProviderFlag) != "" {
@@ -489,6 +517,22 @@ func cmdRender(args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if *jsonOut {
+		payload := renderJSONOutput{
+			Write:            *write,
+			AIMode:           mode,
+			AIProvider:       aiProvider,
+			FilesRemoved:     result.FilesRemoved,
+			FilesUpdated:     result.FilesUpdated,
+			FilesWritten:     result.FilesWritten,
+			DomainCount:      len(result.DomainChecksums),
+			DomainChecksums:  result.DomainChecksums,
+			AIUsed:           result.AIUsed,
+			AIFallback:       result.AIFallback,
+			AIFallbackReason: result.AIFallbackReason,
+		}
+		return writeJSON(payload)
 	}
 	if *write {
 		fmt.Printf(
@@ -610,6 +654,7 @@ func cmdGc(args []string) error {
 func cmdStatus(args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -619,9 +664,17 @@ func cmdStatus(args []string) error {
 	}
 	status, err := canon.GetStatus(abs)
 	if err != nil {
+		if *jsonOut {
+			if jsonErr := writeJSON(status); jsonErr != nil {
+				return jsonErr
+			}
+		}
 		return err
 	}
 
+	if *jsonOut {
+		return writeJSON(status)
+	}
 	fmt.Printf("total specs: %d\n", status.TotalSpecs)
 	fmt.Printf("feature specs: %d\n", status.FeatureSpecs)
 	fmt.Printf("technical specs: %d\n", status.TechnicalSpecs)
@@ -1232,6 +1285,11 @@ func printUsage() {
 	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
+	fmt.Println()
+	fmt.Println("automation JSON options:")
+	fmt.Println("  ingest --json          output spec_id, spec_path, ledger_path, and parents")
+	fmt.Println("  render --json          output render counts and AI application metadata")
+	fmt.Println("  status --json          output repository health, counts, and layout repair metadata")
 	fmt.Println()
 	fmt.Println("semantic-diff options:")
 	fmt.Println("  --root <path>          repository root (default: \".\")")

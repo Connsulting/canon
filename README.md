@@ -34,6 +34,13 @@ Render options:
 - `--ai off|auto|from-response` (default: `auto`)
 - `--ai-provider codex|claude` (default from config)
 - `--response-file <path>` (required for `from-response`; implied when provided with `auto`)
+- `--json` emit machine-readable JSON with write counts, domain count/checksums, selected AI mode/provider, AI application state, and fallback metadata
+
+Ingest options:
+- `--json` emit machine-readable JSON with `spec_id`, `spec_path`, `ledger_path`, and resolved `parents`
+
+Status options:
+- `--json` emit machine-readable JSON with repository health, layout status, missing layout paths, repair command, spec counts, domain counts, and ledger counts
 
 Log options:
 - `--graph` render dependency graph view from `depends_on`
@@ -98,6 +105,24 @@ Semantic diff options:
 - `--ai <mode>` AI mode: `auto` or `from-response` (default: `auto`)
 - `--ai-provider <name>` provider override: `codex` or `claude`
 - `--response-file <path>` deterministic replay input for `from-response` mode (implied when provided with `auto`)
+
+## CI Automation Contract
+
+Minimal local CI loop:
+
+```bash
+go run ./cmd/canon init --root . --ai off
+go run ./cmd/canon ingest --root . --file specs/new-requirement.md --response-file fixtures/ingest-response.json --json
+go run ./cmd/canon check --root . --response-file fixtures/check-response.json --json
+go run ./cmd/canon render --root . --write --ai from-response --response-file fixtures/render-response.json --json
+go run ./cmd/canon status --root . --json
+go run ./cmd/canon semantic-diff --root . --ai from-response --response-file fixtures/semantic-response.json --json
+```
+
+Exit behavior:
+- `0`: command succeeded or gate passed.
+- `1`: command failed because of validation, argument, gate, or layout errors.
+- Commands with `--json` write structured JSON for their supported result payloads; `status --json` also writes layout repair metadata before returning a layout failure.
 
 GC options:
 - `--domain <name>` consolidate all specs in one domain
