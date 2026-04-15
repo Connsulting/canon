@@ -157,6 +157,194 @@ func TestInitCommandAIOffCreatesLayoutOnly(t *testing.T) {
 	}
 }
 
+func TestIngestCommandJSONOutput(t *testing.T) {
+	root := t.TempDir()
+	specPath := filepath.Join(root, "spec.md")
+	if err := os.WriteFile(specPath, []byte("CLI automation commands must emit parseable JSON."), 0o644); err != nil {
+		t.Fatalf("write spec failed: %v", err)
+	}
+	responsePath := filepath.Join(root, "ingest-response.json")
+	writeGCResponse(t, responsePath, map[string]any{
+		"model": "test-model",
+		"canonical_spec": map[string]any{
+			"id":              "a1b2c3d",
+			"type":            "feature",
+			"title":           "CLI Automation",
+			"domain":          "canon-cli",
+			"created":         "2026-04-14T00:00:00Z",
+			"depends_on":      []string{},
+			"touched_domains": []string{"canon-cli"},
+			"body":            "CLI automation commands must emit parseable JSON.",
+		},
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []any{},
+		},
+	})
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"ingest",
+			"--root", root,
+			"--file", specPath,
+			"--id", "a1b2c3d",
+			"--title", "CLI Automation",
+			"--domain", "canon-cli",
+			"--type", "feature",
+			"--response-file", responsePath,
+			"--json",
+		}); err != nil {
+			t.Fatalf("ingest command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		SpecID     string   `json:"spec_id"`
+		SpecPath   string   `json:"spec_path"`
+		LedgerPath string   `json:"ledger_path"`
+		Parents    []string `json:"parents"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.SpecID != "a1b2c3d" {
+		t.Fatalf("expected spec id a1b2c3d, got %+v", payload)
+	}
+	if payload.SpecPath != ".canon/specs/a1b2c3d.spec.md" || !strings.HasPrefix(payload.LedgerPath, ".canon/ledger/") {
+		t.Fatalf("unexpected ingest paths: %+v", payload)
+	}
+	if payload.Parents == nil || len(payload.Parents) != 0 {
+		t.Fatalf("expected present empty parents array, got %#v", payload.Parents)
+	}
+}
+
+func TestStatusCommandJSONOutputIncludesLayoutMetadata(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:   "CLI automation commands must emit parseable JSON.",
+		ID:     "a1b2c3d",
+		Title:  "CLI Automation",
+		Domain: "canon-cli",
+		Type:   "feature",
+	}); err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"status", "--root", root, "--json"}); err != nil {
+			t.Fatalf("status command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Healthy                 bool     `json:"healthy"`
+		LayoutOK                bool     `json:"layout_ok"`
+		LayoutRepairRequired    bool     `json:"layout_repair_required"`
+		MissingLayoutPaths      []string `json:"missing_layout_paths"`
+		TotalSpecs              int      `json:"total_specs"`
+		FeatureSpecs            int      `json:"feature_specs"`
+		Domains                 int      `json:"domains"`
+		LedgerEntries           int      `json:"ledger_entries"`
+		LedgerHeads             int      `json:"ledger_heads"`
+		CrossDomainInteractions int      `json:"cross_domain_interactions"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if !payload.Healthy || !payload.LayoutOK || payload.LayoutRepairRequired {
+		t.Fatalf("expected healthy layout metadata, got %+v", payload)
+	}
+	if payload.MissingLayoutPaths == nil || len(payload.MissingLayoutPaths) != 0 {
+		t.Fatalf("expected present empty missing paths array, got %#v", payload.MissingLayoutPaths)
+	}
+	if payload.TotalSpecs != 1 || payload.FeatureSpecs != 1 || payload.Domains != 1 || payload.LedgerEntries != 1 || payload.LedgerHeads != 1 {
+		t.Fatalf("unexpected status counts: %+v", payload)
+	}
+}
+
+func TestStatusCommandJSONReportsRepairMetadataForMissingLayout(t *testing.T) {
+	root := t.TempDir()
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"status", "--root", root, "--json"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected status to fail for missing layout")
+	}
+
+	var payload struct {
+		Healthy              bool     `json:"healthy"`
+		LayoutOK             bool     `json:"layout_ok"`
+		LayoutRepairRequired bool     `json:"layout_repair_required"`
+		LayoutRepairCommand  string   `json:"layout_repair_command"`
+		MissingLayoutPaths   []string `json:"missing_layout_paths"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.Healthy || payload.LayoutOK || !payload.LayoutRepairRequired {
+		t.Fatalf("expected repair-required layout metadata, got %+v", payload)
+	}
+	if payload.LayoutRepairCommand != "canon init --ai off" {
+		t.Fatalf("unexpected repair command: %+v", payload)
+	}
+	if len(payload.MissingLayoutPaths) == 0 {
+		t.Fatalf("expected missing layout paths, got %+v", payload)
+	}
+}
+
+func TestRenderCommandJSONOutput(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	if _, err := canon.Ingest(root, canon.IngestInput{
+		Text:   "CLI automation commands must emit parseable JSON.",
+		ID:     "a1b2c3d",
+		Title:  "CLI Automation",
+		Domain: "canon-cli",
+		Type:   "feature",
+	}); err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"render", "--root", root, "--write", "--ai", "off", "--json"}); err != nil {
+			t.Fatalf("render command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Write           bool              `json:"write"`
+		AIMode          string            `json:"ai_mode"`
+		AIProvider      string            `json:"ai_provider"`
+		FilesWritten    int               `json:"files_written"`
+		FilesUpdated    int               `json:"files_updated"`
+		FilesRemoved    int               `json:"files_removed"`
+		DomainCount     int               `json:"domain_count"`
+		DomainChecksums map[string]string `json:"domain_checksums"`
+		AIUsed          bool              `json:"ai_used"`
+		AIFallback      bool              `json:"ai_fallback"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if !payload.Write || payload.AIMode != "off" || payload.AIUsed || payload.AIFallback {
+		t.Fatalf("unexpected render AI metadata: %+v", payload)
+	}
+	if payload.DomainCount != 1 || payload.DomainChecksums["canon-cli"] == "" {
+		t.Fatalf("unexpected render domain metadata: %+v", payload)
+	}
+	if payload.FilesWritten == 0 || payload.FilesUpdated == 0 || payload.FilesRemoved != 0 {
+		t.Fatalf("unexpected render write counts: %+v", payload)
+	}
+}
+
 func TestInitCommandResponseFileAcceptAllIngestsSpecs(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {

@@ -1,0 +1,14 @@
+{
+  "spec_id": "c1a0580",
+  "title": "Canon CLI Automation Contract",
+  "type": "feature",
+  "domain": "canon-cli",
+  "parents": [
+    "b6e4c2a"
+  ],
+  "sequence": 1776208608591348641,
+  "ingested_at": "2026-04-14T23:16:48Z",
+  "content_hash": "7da23222efc5f25504c65002c668099d9386b657c89e9003ba6305a1aba77fbe",
+  "spec_path": ".canon/specs/c1a0580.spec.md",
+  "source_path": ".canon/sources/c1a0580.source.md"
+}

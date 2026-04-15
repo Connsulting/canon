@@ -61,7 +61,7 @@ specs:
     domain: canon-cli
     touches: [canon-cli, ingest]
     depends_on: [8cfdb59, d72f3b8]
-    depended_on_by: []
+    depended_on_by: [c1a0580]
   b98ed16:
     title: "AI Render Effective State Compression"
     type: technical
@@ -76,6 +76,13 @@ specs:
     touches: [canon-cli, ingest, ledger, state-render, tools]
     depends_on: [b98ed16, e1bcd34, f3c2d71]
     depended_on_by: [b3f2d9c]
+  c1a0580:
+    title: "Canon CLI Automation Contract"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [b6e4c2a]
+    depended_on_by: []
   c5e7d91:
     title: "Semantic Diff Explainer"
     type: technical
@@ -122,7 +129,7 @@ domains:
   ai-runtime:
     specs: [c5e7d91]
   canon-cli:
-    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b6e4c2a, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
+    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b6e4c2a, b98ed16, c0d3f0f, c1a0580, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
   config:
     specs: [a94f2c1, d72f3b8, e1bcd34]
   database:
