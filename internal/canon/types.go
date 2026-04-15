@@ -108,23 +108,34 @@ type BlameSpec struct {
 	RelevantLines []string `json:"relevant_lines"`
 }
 type CheckOptions struct {
-	Domain       string
-	SpecID       string
-	Write        bool
-	AIMode       string
-	AIProvider   string
-	ResponseFile string
+	Domain        string
+	SpecID        string
+	CandidateFile string
+	Write         bool
+	AIMode        string
+	AIProvider    string
+	ResponseFile  string
+}
+
+type CheckCandidate struct {
+	SpecID string `json:"spec_id"`
+	Title  string `json:"title"`
+	Domain string `json:"domain"`
+	Path   string `json:"path,omitempty"`
 }
 
 type CheckConflict struct {
 	SpecA          string   `json:"spec_a"`
 	TitleA         string   `json:"title_a"`
+	DomainA        string   `json:"domain_a"`
 	SpecB          string   `json:"spec_b"`
 	TitleB         string   `json:"title_b"`
+	DomainB        string   `json:"domain_b"`
 	Domain         string   `json:"domain"`
 	StatementKey   string   `json:"statement_key"`
 	LineA          string   `json:"line_a"`
 	LineB          string   `json:"line_b"`
+	Reason         string   `json:"reason,omitempty"`
 	OverlapDomains []string `json:"-"`
 }
 
@@ -140,6 +151,7 @@ type CheckResult struct {
 	TotalSpecs         int                 `json:"total_specs"`
 	TotalConflicts     int                 `json:"total_conflicts"`
 	TotalReadinessGaps int                 `json:"total_readiness_gaps"`
+	Candidate          *CheckCandidate     `json:"candidate,omitempty"`
 	Conflicts          []CheckConflict     `json:"conflicts"`
 	ReadinessGaps      []CheckReadinessGap `json:"readiness_gaps"`
 	ReportPaths        []string            `json:"report_paths,omitempty"`

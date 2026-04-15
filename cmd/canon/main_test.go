@@ -1160,6 +1160,78 @@ func TestCheckCommandWriteCreatesConflictReport(t *testing.T) {
 	}
 }
 
+func TestCheckCommandCandidateFileJSONAndExitCodeOnConflicts(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCLICheckSpec(t, root, "api-required", "API Auth Required", "api", "API endpoints must require authentication.")
+	candidatePath := writeCLICandidateFile(t, root, "api-public", "Public API Access", "api", "Public API endpoints must not require authentication.")
+	responsePath := writeCLICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": true,
+			"summary":       "Found candidate conflict.",
+			"conflicts": []map[string]any{
+				{
+					"spec_a":        "api-required",
+					"spec_b":        "api-public",
+					"domain":        "api",
+					"statement_key": "api auth required",
+					"line_a":        "API endpoints must require authentication.",
+					"line_b":        "Public API endpoints must not require authentication.",
+					"reason":        "Direct contradiction.",
+				},
+			},
+		},
+	})
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"check", "--root", root, "--file", candidatePath, "--json", "--response-file", responsePath})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected candidate conflict check command to return error")
+	}
+
+	var payload struct {
+		Passed         bool `json:"passed"`
+		TotalSpecs     int  `json:"total_specs"`
+		TotalConflicts int  `json:"total_conflicts"`
+		Candidate      struct {
+			SpecID string `json:"spec_id"`
+			Title  string `json:"title"`
+			Domain string `json:"domain"`
+		} `json:"candidate"`
+		Conflicts []struct {
+			SpecA   string `json:"spec_a"`
+			TitleA  string `json:"title_a"`
+			DomainA string `json:"domain_a"`
+			SpecB   string `json:"spec_b"`
+			TitleB  string `json:"title_b"`
+			DomainB string `json:"domain_b"`
+			LineA   string `json:"line_a"`
+			LineB   string `json:"line_b"`
+		} `json:"conflicts"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\n%s", err, out)
+	}
+	if payload.Passed || payload.TotalSpecs != 2 || payload.TotalConflicts != 1 {
+		t.Fatalf("unexpected candidate check payload: %+v", payload)
+	}
+	if payload.Candidate.SpecID != "api-public" || payload.Candidate.Title != "Public API Access" || payload.Candidate.Domain != "api" {
+		t.Fatalf("unexpected candidate metadata: %+v", payload.Candidate)
+	}
+	if len(payload.Conflicts) != 1 || payload.Conflicts[0].SpecA != "api-required" || payload.Conflicts[0].SpecB != "api-public" {
+		t.Fatalf("unexpected candidate conflicts: %+v", payload.Conflicts)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "api-public.spec.md")); !os.IsNotExist(err) {
+		t.Fatalf("candidate check should not write candidate spec, stat err=%v", err)
+	}
+}
+
 func TestDepsRiskCommandJSONOutputShape(t *testing.T) {
 	root := t.TempDir()
 	writeCLIGoMod(t, root, `module example.com/cli-pass
@@ -1500,6 +1572,26 @@ touched_domains: [` + domain + `]
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatalf("failed writing check spec %s: %v", id, err)
 	}
+}
+
+func writeCLICandidateFile(t *testing.T, root string, id string, title string, domain string, body string) string {
+	t.Helper()
+	path := filepath.Join(root, id+".candidate.md")
+	text := `---
+id: ` + id + `
+type: feature
+title: "` + title + `"
+domain: ` + domain + `
+created: 2026-04-14T00:00:00Z
+depends_on: []
+touched_domains: [` + domain + `]
+---
+` + body + `
+`
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatalf("failed writing candidate file %s: %v", id, err)
+	}
+	return path
 }
 
 func writeCLIProductRequirementSpec(t *testing.T, root string, id string, approvalState string, sourceIssue string, body string) {
