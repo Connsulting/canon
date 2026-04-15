@@ -243,7 +243,7 @@ func gcConsolidationJSONSchema() string {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "type", "title", "domain", "created", "depends_on", "touched_domains", "consolidates", "body"],
+        "required": ["id", "type", "title", "domain", "created", "requirement_kind", "source_issue", "approval_state", "depends_on", "touched_domains", "consolidates", "body"],
         "additionalProperties": false,
         "properties": {
           "id": {"type": "string"},
