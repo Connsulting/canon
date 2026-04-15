@@ -392,7 +392,7 @@ func aiIngestJSONSchema() string {
     "canonical_spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "title", "domain", "created", "depends_on", "touched_domains", "body"],
+      "required": ["id", "type", "title", "domain", "created", "requirement_kind", "source_issue", "approval_state", "depends_on", "touched_domains", "body"],
       "properties": {
         "id": {"type": "string"},
         "type": {"type": "string", "enum": ["feature", "technical", "resolution"]},
