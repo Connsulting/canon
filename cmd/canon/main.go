@@ -1062,9 +1062,11 @@ func printBlameResult(result canon.BlameResult, domain string) {
 	if !result.Found || len(result.Results) == 0 {
 		fmt.Println("blame: no matching specs found")
 		fmt.Println()
-		fmt.Println("  The described behavior is not covered by any canonical spec.")
-		fmt.Println("  This may be an implementation decision not yet captured in specs,")
-		fmt.Println("  or a specification gap.")
+		guidance := strings.TrimSpace(result.Guidance)
+		if guidance == "" {
+			guidance = "No canonical spec covers this behavior. Author a spec before treating it as expected behavior."
+		}
+		fmt.Printf("  %s\n", guidance)
 		fmt.Println()
 		fmt.Println("  Consider authoring a spec with:")
 		suggestedDomain := strings.TrimSpace(domain)
@@ -1088,12 +1090,20 @@ func printBlameResult(result canon.BlameResult, domain string) {
 		fmt.Printf("  confidence: %s\n", item.Confidence)
 		fmt.Printf("  created: %s\n", item.Created)
 		fmt.Println()
-		fmt.Println("  relevant lines:")
-		if len(item.RelevantLines) == 0 {
+		fmt.Println("  citations:")
+		if len(item.Citations) == 0 {
 			fmt.Println("  > (no excerpt provided)")
 		} else {
-			for _, line := range item.RelevantLines {
-				fmt.Printf("  > %s\n", line)
+			for _, citation := range item.Citations {
+				location := fmt.Sprintf("%d", citation.StartLine)
+				if citation.EndLine != citation.StartLine {
+					location = fmt.Sprintf("%d-%d", citation.StartLine, citation.EndLine)
+				}
+				if strings.TrimSpace(citation.Section) != "" {
+					location = fmt.Sprintf("%s:%s", citation.Section, location)
+				}
+				text := strings.ReplaceAll(citation.Text, "\n", "\n  > ")
+				fmt.Printf("  > %s %s\n", location, text)
 			}
 		}
 		if i != len(result.Results)-1 {

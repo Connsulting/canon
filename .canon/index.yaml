@@ -13,6 +13,13 @@ specs:
     touches: [canon-cli, ingest]
     depends_on: [8e6a1d2, e1bcd34]
     depended_on_by: [9ad4f11]
+  8cfdb59:
+    title: "Auto DRY AI Response Parsing Refactor (Draft)"
+    type: feature
+    domain: general
+    touches: [general]
+    depends_on: [c5e7d91]
+    depended_on_by: [b6e4c2a]
   8e6a1d2:
     title: "Init Symlink Scan Stability"
     type: technical
@@ -48,6 +55,13 @@ specs:
     touches: [canon-cli]
     depends_on: [c0d3f0f, d72f3b8]
     depended_on_by: [a94f2c1]
+  b6e4c2a:
+    title: "Canon Blame Provenance and Gap JSON Contract"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli, ingest]
+    depends_on: [8cfdb59, d72f3b8]
+    depended_on_by: []
   b98ed16:
     title: "AI Render Effective State Compression"
     type: technical
@@ -68,7 +82,7 @@ specs:
     domain: canon-cli
     touches: [ai-runtime, canon-cli]
     depends_on: [4e9a21f]
-    depended_on_by: []
+    depended_on_by: [8cfdb59]
   c9f6a10:
     title: "Canon Reset"
     type: technical
@@ -82,7 +96,7 @@ specs:
     domain: canon-cli
     touches: [canon-cli, config, ingest]
     depends_on: [c9f6a10, e1bcd34]
-    depended_on_by: [b3f2d9c]
+    depended_on_by: [b3f2d9c, b6e4c2a]
   e1bcd34:
     title: "Canon MVP Phase 1: Spec Ingest and Deterministic State Render"
     type: technical
@@ -108,13 +122,15 @@ domains:
   ai-runtime:
     specs: [c5e7d91]
   canon-cli:
-    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
+    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b6e4c2a, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
   config:
     specs: [a94f2c1, d72f3b8, e1bcd34]
   database:
     specs: [4e9a21f]
+  general:
+    specs: [8cfdb59]
   ingest:
-    specs: [7c4d2e1, a94f2c1, b98ed16, c0d3f0f, d72f3b8, e1bcd34]
+    specs: [7c4d2e1, a94f2c1, b6e4c2a, b98ed16, c0d3f0f, d72f3b8, e1bcd34]
   init:
     specs: [8e6a1d2]
   ledger:
@@ -132,6 +148,8 @@ cross_domain_edges:
     domains: [canon-cli, init]
   - spec: a94f2c1
     domains: [canon-cli, config, ingest]
+  - spec: b6e4c2a
+    domains: [canon-cli, ingest]
   - spec: b98ed16
     domains: [canon-cli, ingest, state-render]
   - spec: c0d3f0f

@@ -718,8 +718,11 @@ func TestBlameCommandDirectMatchWithResponseFile(t *testing.T) {
 	if !strings.Contains(out, "confidence: high") {
 		t.Fatalf("expected confidence in output, got:\n%s", out)
 	}
-	if !strings.Contains(out, "> Default page size must be 25 items.") {
-		t.Fatalf("expected relevant lines in output, got:\n%s", out)
+	if !strings.Contains(out, "citations:") {
+		t.Fatalf("expected citations in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, ">") || !strings.Contains(out, "Default page size must be 25 items.") {
+		t.Fatalf("expected resolved citation in output, got:\n%s", out)
 	}
 }
 
@@ -817,7 +820,7 @@ func TestBlameCommandNoMatchReportsSpecGap(t *testing.T) {
 	if !strings.Contains(out, "blame: no matching specs found") {
 		t.Fatalf("expected no match summary, got:\n%s", out)
 	}
-	if !strings.Contains(out, "specification gap") {
+	if !strings.Contains(out, "Author a spec before treating it as expected behavior") {
 		t.Fatalf("expected gap explanation, got:\n%s", out)
 	}
 	if !strings.Contains(out, `canon raw --text "error messages are displayed in the user's preferred language"`) {
@@ -924,14 +927,22 @@ func TestBlameCommandJSONOutput(t *testing.T) {
 	})
 
 	var payload struct {
-		Query   string `json:"query"`
-		Found   bool   `json:"found"`
-		Results []struct {
-			SpecID       string   `json:"spec_id"`
-			Title        string   `json:"title"`
-			Domain       string   `json:"domain"`
-			Confidence   string   `json:"confidence"`
-			Created      string   `json:"created"`
+		Query    string `json:"query"`
+		Found    bool   `json:"found"`
+		Status   string `json:"status"`
+		Guidance string `json:"guidance"`
+		Results  []struct {
+			SpecID     string `json:"spec_id"`
+			Title      string `json:"title"`
+			Domain     string `json:"domain"`
+			Confidence string `json:"confidence"`
+			Created    string `json:"created"`
+			Citations  []struct {
+				Section   string `json:"section"`
+				StartLine int    `json:"start_line"`
+				EndLine   int    `json:"end_line"`
+				Text      string `json:"text"`
+			} `json:"citations"`
 			RelevantLine []string `json:"relevant_lines"`
 		} `json:"results"`
 	}
@@ -941,8 +952,72 @@ func TestBlameCommandJSONOutput(t *testing.T) {
 	if payload.Query == "" || !payload.Found {
 		t.Fatalf("expected found JSON payload, got: %+v", payload)
 	}
+	if payload.Status != "specified" {
+		t.Fatalf("expected specified status, got: %+v", payload)
+	}
 	if len(payload.Results) != 1 || payload.Results[0].SpecID != "a1b2c3d" {
 		t.Fatalf("unexpected JSON results: %+v", payload.Results)
+	}
+	if len(payload.Results[0].Citations) != 2 {
+		t.Fatalf("expected resolved citations, got: %+v", payload.Results[0].Citations)
+	}
+	if payload.Results[0].Citations[0].StartLine == 0 || payload.Results[0].Citations[0].EndLine == 0 {
+		t.Fatalf("expected citation line numbers, got: %+v", payload.Results[0].Citations[0])
+	}
+}
+
+func TestBlameCommandJSONNoMatchReportsStableUnspecifiedShape(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	ingestSpecForBlame(t, root, "spec-401", "Session Policy", "auth", "2026-02-10T12:00:00Z", []string{"auth"},
+		"Sessions must expire after 15 minutes of inactivity.",
+	)
+
+	responsePath := filepath.Join(root, "blame-response.json")
+	response := `{
+  "model": "codex-headless",
+  "found": false,
+  "results": []
+}`
+	if err := os.WriteFile(responsePath, []byte(response), 0o644); err != nil {
+		t.Fatalf("failed writing response file: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{
+			"blame",
+			"--root", root,
+			"--json",
+			"--response-file", responsePath,
+			"error messages are displayed in the user's preferred language",
+		}); err != nil {
+			t.Fatalf("blame command failed: %v", err)
+		}
+	})
+
+	var payload struct {
+		Query    string            `json:"query"`
+		Found    bool              `json:"found"`
+		Status   string            `json:"status"`
+		Guidance string            `json:"guidance"`
+		Results  []json.RawMessage `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("json output is invalid: %v\noutput:\n%s", err, out)
+	}
+	if payload.Found {
+		t.Fatalf("expected no match, got: %+v", payload)
+	}
+	if payload.Status != "unspecified" {
+		t.Fatalf("expected unspecified status, got: %+v", payload)
+	}
+	if !strings.Contains(payload.Guidance, "Author a spec") {
+		t.Fatalf("expected author-a-spec guidance, got: %+v", payload)
+	}
+	if payload.Results == nil || len(payload.Results) != 0 {
+		t.Fatalf("expected present empty results array, got: %#v", payload.Results)
 	}
 }
 
