@@ -1,0 +1,14 @@
+{
+  "spec_id": "d4c8b12",
+  "title": "Init Review-First Acceptance",
+  "type": "technical",
+  "domain": "init",
+  "parents": [
+    "a94f2c1"
+  ],
+  "sequence": 1776209057949619059,
+  "ingested_at": "2026-04-14T23:24:17Z",
+  "content_hash": "e6b913e02fda87d022062a73afaa72f633685ca9edb17ad8b47210ac86e1ea02",
+  "spec_path": ".canon/specs/d4c8b12.spec.md",
+  "source_path": ".canon/sources/d4c8b12.source.md"
+}

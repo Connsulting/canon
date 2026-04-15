@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"canon/internal/canon"
+	"golang.org/x/term"
 )
 
 //go:embed VERSION
@@ -138,13 +139,15 @@ func cmdInit(args []string) error {
 		return nil
 	}
 
-	interactive := !*noInteractive && !*acceptAll && isTTY(os.Stdin)
+	bulkAccept := *noInteractive || *acceptAll
+	interactive := !bulkAccept && isTTY(os.Stdin)
 	if _, err := canon.Init(abs, canon.InitOptions{
 		AIMode:       mode,
 		AIProvider:   provider,
 		CrawlMode:    crawl,
 		ResponseFile: strings.TrimSpace(*responseFile),
 		Interactive:  interactive,
+		AcceptAll:    bulkAccept,
 		MaxSpecs:     *maxSpecs,
 		ContextLimit: *contextLimit,
 		Include:      include.Values(),
@@ -1241,7 +1244,7 @@ func printUsage() {
 	fmt.Println("  --ai-provider <name>   AI provider: codex, claude (default: from .canonconfig)")
 	fmt.Println("  --crawl <mode>         init crawl mode: snapshot, agentic, multipass (default: \"snapshot\")")
 	fmt.Println("  --response-file <path> precomputed AI response JSON")
-	fmt.Println("  --no-interactive       accept all generated specs without review")
+	fmt.Println("  --no-interactive       explicitly accept all generated specs without review")
 	fmt.Println("  --accept-all           alias for --no-interactive")
 	fmt.Println("  --max-specs <n>        maximum specs to generate (default: 10)")
 	fmt.Println("  --context-limit <kb>   max initial context, seed inventory, or per-area evidence size in KB (default: 100)")
@@ -1309,11 +1312,7 @@ func isTTY(file *os.File) bool {
 	if file == nil {
 		return false
 	}
-	info, err := file.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
+	return term.IsTerminal(int(file.Fd()))
 }
 
 func collectRawInputInteractive(reader io.Reader, writer io.Writer) (string, error) {
