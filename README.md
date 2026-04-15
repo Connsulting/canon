@@ -112,11 +112,11 @@ Minimal local CI loop:
 
 ```bash
 go run ./cmd/canon init --root . --ai off
-go run ./cmd/canon ingest --root . --file specs/new-requirement.md --json
-go run ./cmd/canon check --root . --json
-go run ./cmd/canon render --root . --write --json
+go run ./cmd/canon ingest --root . --file specs/new-requirement.md --response-file fixtures/ingest-response.json --json
+go run ./cmd/canon check --root . --response-file fixtures/check-response.json --json
+go run ./cmd/canon render --root . --write --ai from-response --response-file fixtures/render-response.json --json
 go run ./cmd/canon status --root . --json
-go run ./cmd/canon semantic-diff --root . --json
+go run ./cmd/canon semantic-diff --root . --ai from-response --response-file fixtures/semantic-response.json --json
 ```
 
 Exit behavior:

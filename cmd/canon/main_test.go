@@ -345,6 +345,21 @@ func TestRenderCommandJSONOutput(t *testing.T) {
 	}
 }
 
+func TestRenderCommandRejectsInvalidAIModeWithJSON(t *testing.T) {
+	root := t.TempDir()
+	if err := canon.EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	err := run([]string{"render", "--root", root, "--ai", "definitely-bad", "--json"})
+	if err == nil {
+		t.Fatalf("expected invalid --ai mode error")
+	}
+	if !strings.Contains(err.Error(), "invalid --ai mode") {
+		t.Fatalf("unexpected invalid ai mode error: %v", err)
+	}
+}
+
 func TestInitCommandResponseFileAcceptAllIngestsSpecs(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {

@@ -500,6 +500,9 @@ func cmdRender(args []string) error {
 	if strings.TrimSpace(*responseFile) != "" && mode == "auto" {
 		mode = "from-response"
 	}
+	if mode != "off" && mode != "auto" && mode != "from-response" {
+		return fmt.Errorf("invalid --ai mode %q (expected one of: off, auto, from-response)", strings.TrimSpace(*aiMode))
+	}
 
 	aiProvider := cfg.AI.Provider
 	if strings.TrimSpace(*aiProviderFlag) != "" {
