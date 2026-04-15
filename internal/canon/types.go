@@ -52,10 +52,10 @@ type IngestInput struct {
 }
 
 type IngestResult struct {
-	SpecID     string
-	SpecPath   string
-	LedgerPath string
-	Parents    []string
+	SpecID     string   `json:"spec_id"`
+	SpecPath   string   `json:"spec_path"`
+	LedgerPath string   `json:"ledger_path"`
+	Parents    []string `json:"parents"`
 }
 
 type ResetInput struct {
@@ -77,13 +77,13 @@ type RenderOptions struct {
 }
 
 type RenderResult struct {
-	FilesRemoved     int
-	FilesUpdated     int
-	FilesWritten     int
-	DomainChecksums  map[string]string
-	AIUsed           bool
-	AIFallback       bool
-	AIFallbackReason string
+	FilesRemoved     int               `json:"files_removed"`
+	FilesUpdated     int               `json:"files_updated"`
+	FilesWritten     int               `json:"files_written"`
+	DomainChecksums  map[string]string `json:"domain_checksums,omitempty"`
+	AIUsed           bool              `json:"ai_used"`
+	AIFallback       bool              `json:"ai_fallback"`
+	AIFallbackReason string            `json:"ai_fallback_reason,omitempty"`
 }
 
 type BlameInput struct {

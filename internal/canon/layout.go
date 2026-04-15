@@ -155,3 +155,14 @@ func (r LayoutReport) ErrorMessage() string {
 		return "repository layout is healthy"
 	}
 }
+
+func (r LayoutReport) MissingLayoutPaths() []string {
+	paths := make([]string, 0, len(r.Problems)+len(r.MissingSupport))
+	for _, problem := range r.Problems {
+		if problem.Kind == LayoutProblemMissingCore {
+			paths = append(paths, problem.Path)
+		}
+	}
+	paths = append(paths, r.MissingSupport...)
+	return paths
+}
