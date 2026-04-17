@@ -30,6 +30,78 @@ func TestInitLayoutCreatesCanonSourceFolders(t *testing.T) {
 	}
 }
 
+func TestCheckLayoutReportsHealthy(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	report := CheckLayout(root)
+	if report.Health != LayoutHealthy {
+		t.Fatalf("expected healthy layout, got %s: %s", report.Health, report.ErrorMessage())
+	}
+	if len(report.MissingSupport) != 0 || len(report.Problems) != 0 {
+		t.Fatalf("expected no layout problems, got missing=%v problems=%v", report.MissingSupport, report.Problems)
+	}
+}
+
+func TestCheckLayoutReportsRepairableMissingSupport(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, ".canon", "conflict-reports")); err != nil {
+		t.Fatalf("failed removing support dir: %v", err)
+	}
+
+	report := CheckLayout(root)
+	if report.Health != LayoutRepairable {
+		t.Fatalf("expected repairable layout, got %s: %s", report.Health, report.ErrorMessage())
+	}
+	if len(report.MissingSupport) != 1 || report.MissingSupport[0] != ".canon/conflict-reports" {
+		t.Fatalf("unexpected missing support dirs: %v", report.MissingSupport)
+	}
+}
+
+func TestCheckLayoutReportsInvalidMissingCore(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".canon", "sources"), 0o755); err != nil {
+		t.Fatalf("failed creating core source dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".canon", "ledger"), 0o755); err != nil {
+		t.Fatalf("failed creating core ledger dir: %v", err)
+	}
+
+	report := CheckLayout(root)
+	if report.Health != LayoutInvalid {
+		t.Fatalf("expected invalid layout, got %s", report.Health)
+	}
+	if len(report.Problems) == 0 || report.Problems[0].Kind != LayoutProblemMissingCore {
+		t.Fatalf("expected missing core problem, got %v", report.Problems)
+	}
+}
+
+func TestCheckLayoutReportsInvalidNonDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, ".canon", "specs")); err != nil {
+		t.Fatalf("failed removing specs dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".canon", "specs"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatalf("failed writing specs file: %v", err)
+	}
+
+	report := CheckLayout(root)
+	if report.Health != LayoutInvalid {
+		t.Fatalf("expected invalid layout, got %s", report.Health)
+	}
+	if len(report.Problems) != 1 || report.Problems[0].Kind != LayoutProblemNotDirectory {
+		t.Fatalf("expected non-directory problem, got %v", report.Problems)
+	}
+}
+
 func TestIngestFreeformAndLogNewestFirst(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {

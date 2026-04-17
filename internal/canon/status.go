@@ -1,6 +1,7 @@
 package canon
 
 type Status struct {
+	Layout                  LayoutReport
 	TotalSpecs              int
 	FeatureSpecs            int
 	TechnicalSpecs          int
@@ -12,20 +13,21 @@ type Status struct {
 }
 
 func GetStatus(root string) (Status, error) {
-	if err := EnsureLayout(root, false); err != nil {
-		return Status{}, err
+	layout := CheckLayout(root)
+	if layout.Health == LayoutInvalid {
+		return Status{}, LayoutError{Report: layout}
 	}
 	specs, err := loadSpecs(root)
 	if err != nil {
-		return Status{}, err
+		return Status{}, invalidRepositoryDataError(".canon/specs", err)
 	}
 	index := buildIndex(specs)
 	entries, err := LoadLedger(root)
 	if err != nil {
-		return Status{}, err
+		return Status{}, invalidRepositoryDataError(".canon/ledger", err)
 	}
 
-	st := Status{}
+	st := Status{Layout: layout}
 	for _, spec := range specs {
 		st.TotalSpecs++
 		switch spec.Type {
@@ -42,4 +44,13 @@ func GetStatus(root string) (Status, error) {
 	st.LedgerEntries = len(entries)
 	st.LedgerHeads = len(ledgerHeads(entries))
 	return st, nil
+}
+
+func invalidRepositoryDataError(path string, err error) error {
+	return LayoutError{Report: LayoutReport{
+		Health: LayoutInvalid,
+		Problems: []LayoutProblem{
+			{Path: path, Kind: LayoutProblemInvalidData, Err: err},
+		},
+	}}
 }

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"canon/internal/canon"
 )
@@ -154,6 +155,109 @@ func TestInitCommandAIOffCreatesLayoutOnly(t *testing.T) {
 	}
 	if len(specs) != 0 {
 		t.Fatalf("expected no specs for --ai off, got %d", len(specs))
+	}
+}
+
+func TestInitCommandAIOffRepairsSupportLayoutWithoutTouchingArtifacts(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{".canon/specs", ".canon/sources", ".canon/ledger"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(rel)), 0o755); err != nil {
+			t.Fatalf("failed creating %s: %v", rel, err)
+		}
+	}
+	artifacts := map[string]string{
+		".canon/specs/demo.spec.md":        "spec content\n",
+		".canon/sources/demo.source.md":    "source content\n",
+		".canon/ledger/20260414-demo.json": `{"spec_id":"demo"}` + "\n",
+	}
+	for rel, content := range artifacts {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), []byte(content), 0o644); err != nil {
+			t.Fatalf("failed writing artifact %s: %v", rel, err)
+		}
+	}
+
+	oldTime := time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	beforeModTimes := map[string]time.Time{}
+	for rel := range artifacts {
+		absPath := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.Chtimes(absPath, oldTime, oldTime); err != nil {
+			t.Fatalf("failed setting mtime for %s: %v", rel, err)
+		}
+		info, err := os.Stat(absPath)
+		if err != nil {
+			t.Fatalf("failed stat before init for %s: %v", rel, err)
+		}
+		beforeModTimes[rel] = info.ModTime()
+	}
+
+	if err := run([]string{"init", "--root", root, "--ai", "off"}); err != nil {
+		t.Fatalf("init command failed: %v", err)
+	}
+
+	for rel, wantContent := range artifacts {
+		absPath := filepath.Join(root, filepath.FromSlash(rel))
+		got, err := os.ReadFile(absPath)
+		if err != nil {
+			t.Fatalf("failed reading artifact after init %s: %v", rel, err)
+		}
+		if string(got) != wantContent {
+			t.Fatalf("artifact %s content changed: got %q want %q", rel, string(got), wantContent)
+		}
+		info, err := os.Stat(absPath)
+		if err != nil {
+			t.Fatalf("failed stat after init for %s: %v", rel, err)
+		}
+		if !info.ModTime().Equal(beforeModTimes[rel]) {
+			t.Fatalf("artifact %s mtime changed: got %s want %s", rel, info.ModTime(), beforeModTimes[rel])
+		}
+	}
+	for _, rel := range []string{".canon/conflict-reports", ".canon/archive/specs", ".canon/archive/sources", "state/interactions"} {
+		if st, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil || !st.IsDir() {
+			t.Fatalf("expected repaired support dir %s, err=%v", rel, err)
+		}
+	}
+}
+
+func TestStatusCommandReportsRepairableLayout(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{".canon/specs", ".canon/sources", ".canon/ledger"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(rel)), 0o755); err != nil {
+			t.Fatalf("failed creating %s: %v", rel, err)
+		}
+	}
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"status", "--root", root}); err != nil {
+			t.Fatalf("status command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "repository health: repairable") {
+		t.Fatalf("expected repairable health output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "missing support directories: .canon/conflict-reports") {
+		t.Fatalf("expected missing support dirs output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "repair: canon init --root") || !strings.Contains(out, "--ai off") {
+		t.Fatalf("expected repair guidance, got:\n%s", out)
+	}
+}
+
+func TestStatusCommandRejectsInvalidLayout(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".canon"), 0o755); err != nil {
+		t.Fatalf("failed creating .canon dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".canon", "specs"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatalf("failed writing .canon/specs file: %v", err)
+	}
+
+	err := run([]string{"status", "--root", root})
+	if err == nil {
+		t.Fatalf("expected invalid layout error")
+	}
+	if !strings.Contains(err.Error(), "invalid repository layout") || !strings.Contains(err.Error(), "required path is not a directory: .canon/specs") {
+		t.Fatalf("unexpected status error: %v", err)
 	}
 }
 

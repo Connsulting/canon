@@ -1,0 +1,14 @@
+{
+  "spec_id": "ab8c1ec",
+  "title": "Repository Health and Layout Repair",
+  "type": "feature",
+  "domain": "canon-cli",
+  "parents": [
+    "8cfdb59"
+  ],
+  "sequence": 1776206631891323307,
+  "ingested_at": "2026-04-14T22:43:51Z",
+  "content_hash": "916c115bcff0c2d076909b66bc758c257dc096f705fa588f3b62e2fb781977c1",
+  "spec_path": ".canon/specs/ab8c1ec.spec.md",
+  "source_path": ".canon/sources/ab8c1ec.source.md"
+}
