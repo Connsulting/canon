@@ -58,6 +58,7 @@ Log options:
 - `--grep <text>` case-insensitive title filter
 - `--domain <name>` exact domain filter
 - `--type <name>` exact type filter
+- `--requirement-kind <name>` exact `requirement_kind` filter, for example `product`
 - `--color auto|always|never` ANSI color output (default: `auto`)
 - `--date absolute|relative` timestamp display mode (default: `relative`)
 - `-n <count>` max rows (defaults to 50)
@@ -76,11 +77,23 @@ Blame defaults:
 Check options:
 - `--domain <name>` restrict conflict scan to matching spec domains
 - `--spec <id>` check one spec against the remaining in-scope specs
+- `--file <path>` check a candidate spec file against canonical specs without ingesting it
 - `--ai auto|from-response` AI check mode (default: `auto`)
 - `--ai-provider codex|claude` AI provider override
 - `--response-file <path>` JSON response file for `from-response` mode
 - `--json` emit machine-readable JSON
 - `--write` persist conflict reports under `.canon/conflict-reports/`
+
+Candidate gate:
+- `canon check --file specs/new-requirement.md` reviews a candidate against the existing `.canon/specs` corpus before ingest.
+- Candidate checks are read-only by default: they do not write `.canon/specs`, `.canon/sources`, `.canon/ledger`, or `state/`.
+- With `--json`, output includes `passed`, `total_specs`, `total_conflicts`, candidate `spec_id`/`title`/`domain`, conflict spec IDs/titles/domains, contradictory lines, and optional report paths.
+- With `--write`, only conflict reports may be created under `.canon/conflict-reports/`.
+
+Product requirement intake metadata:
+- Product requirements remain normal `type: feature` specs with `requirement_kind: product`.
+- Product requirements must include `source_issue`, `approval_state: approved`, and body sections named `Problem statement`, `Proposed solution`, `Success criteria`, `Scope boundaries`, and `Testability notes`.
+- `ingest` rejects incomplete product requirements with readiness gaps. `check` reports readiness gaps for canonical product requirements alongside AI semantic conflict results.
 
 Dependency risk options:
 - `--root <path>` repository root containing `go.mod` (default: `.`)
@@ -113,6 +126,7 @@ Examples:
 ```bash
 go run ./cmd/canon log --graph --oneline --all -n 100
 go run ./cmd/canon log --oneline --domain api --type feature --grep rate
+go run ./cmd/canon log --requirement-kind product --show-tags
 go run ./cmd/canon log --graph --oneline --all --date relative --color always -n 100
 go run ./cmd/canon blame "graph mode must use semantic dependencies from canonical specs"
 go run ./cmd/canon deps-risk --root .

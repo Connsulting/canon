@@ -290,15 +290,18 @@ func gcBuildConsolidatedSpecs(root string, targetSpecs []Spec, activeIDs map[str
 		activeIDs[specID] = struct{}{}
 
 		spec := Spec{
-			ID:             specID,
-			Type:           strings.TrimSpace(draft.Type),
-			Title:          title,
-			Domain:         domain,
-			Created:        strings.TrimSpace(draft.Created),
-			DependsOn:      depList,
-			TouchedDomains: normalizeList(draft.TouchedDomains),
-			Consolidates:   consolidates,
-			Body:           body,
+			ID:              specID,
+			Type:            strings.TrimSpace(draft.Type),
+			Title:           title,
+			Domain:          domain,
+			Created:         strings.TrimSpace(draft.Created),
+			RequirementKind: strings.TrimSpace(draft.RequirementKind),
+			SourceIssue:     strings.TrimSpace(draft.SourceIssue),
+			ApprovalState:   strings.TrimSpace(draft.ApprovalState),
+			DependsOn:       depList,
+			TouchedDomains:  normalizeList(draft.TouchedDomains),
+			Consolidates:    consolidates,
+			Body:            body,
 		}
 		if spec.Created == "" {
 			spec.Created = now.Format(timeRFC3339)

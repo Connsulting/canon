@@ -143,16 +143,19 @@ func parseSpecText(text string, sourcePath string) (Spec, error) {
 	}
 
 	s := Spec{
-		ID:             scalarString(meta, "id"),
-		Type:           scalarString(meta, "type"),
-		Title:          scalarString(meta, "title"),
-		Domain:         scalarString(meta, "domain"),
-		Created:        scalarString(meta, "created"),
-		DependsOn:      listString(meta, "depends_on"),
-		TouchedDomains: listString(meta, "touched_domains"),
-		Consolidates:   listString(meta, "consolidates"),
-		Path:           sourcePath,
-		Body:           strings.TrimSpace(body),
+		ID:              scalarString(meta, "id"),
+		Type:            scalarString(meta, "type"),
+		Title:           scalarString(meta, "title"),
+		Domain:          scalarString(meta, "domain"),
+		Created:         scalarString(meta, "created"),
+		RequirementKind: scalarString(meta, "requirement_kind"),
+		SourceIssue:     scalarString(meta, "source_issue"),
+		ApprovalState:   scalarString(meta, "approval_state"),
+		DependsOn:       listString(meta, "depends_on"),
+		TouchedDomains:  listString(meta, "touched_domains"),
+		Consolidates:    listString(meta, "consolidates"),
+		Path:            sourcePath,
+		Body:            strings.TrimSpace(body),
 	}
 
 	if s.ID == "" {
@@ -189,6 +192,15 @@ func canonicalSpecText(spec Spec) string {
 		"created: " + spec.Created,
 		"depends_on: " + depends,
 		"touched_domains: " + touches,
+	}
+	if strings.TrimSpace(spec.RequirementKind) != "" {
+		lines = append(lines, "requirement_kind: "+yamlScalar(spec.RequirementKind))
+	}
+	if strings.TrimSpace(spec.SourceIssue) != "" {
+		lines = append(lines, "source_issue: "+yamlScalar(spec.SourceIssue))
+	}
+	if strings.TrimSpace(spec.ApprovalState) != "" {
+		lines = append(lines, "approval_state: "+yamlScalar(spec.ApprovalState))
 	}
 	if len(spec.Consolidates) > 0 {
 		lines = append(lines, "consolidates: "+renderList(spec.Consolidates))

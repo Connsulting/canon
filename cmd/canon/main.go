@@ -324,6 +324,7 @@ func cmdLog(args []string) error {
 	grep := fs.String("grep", "", "case-insensitive title substring filter")
 	domain := fs.String("domain", "", "exact domain filter")
 	typeName := fs.String("type", "", "exact type filter")
+	requirementKind := fs.String("requirement-kind", "", "exact requirement_kind filter")
 	color := fs.String("color", "auto", "colorize output: auto, always, never")
 	date := fs.String("date", "relative", "timestamp format: absolute or relative")
 	showTags := fs.Bool("show-tags", false, "include qualified [type/domain] tags")
@@ -340,6 +341,7 @@ func cmdLog(args []string) error {
 		strings.TrimSpace(*grep) == "" &&
 		strings.TrimSpace(*domain) == "" &&
 		strings.TrimSpace(*typeName) == "" &&
+		strings.TrimSpace(*requirementKind) == "" &&
 		strings.EqualFold(strings.TrimSpace(*color), "auto") &&
 		strings.EqualFold(strings.TrimSpace(*date), "absolute")
 
@@ -381,17 +383,18 @@ func cmdLog(args []string) error {
 	}
 
 	opts := canon.LogOptions{
-		Limit:    *limit,
-		Graph:    *graph,
-		OneLine:  *oneline,
-		All:      *all,
-		Grep:     *grep,
-		Domain:   *domain,
-		Type:     *typeName,
-		Color:    *color,
-		IsTTY:    isTTY(os.Stdout),
-		Date:     *date,
-		ShowTags: *showTags,
+		Limit:           *limit,
+		Graph:           *graph,
+		OneLine:         *oneline,
+		All:             *all,
+		Grep:            *grep,
+		Domain:          *domain,
+		Type:            *typeName,
+		RequirementKind: *requirementKind,
+		Color:           *color,
+		IsTTY:           isTTY(os.Stdout),
+		Date:            *date,
+		ShowTags:        *showTags,
 	}
 	nodes, err := canon.BuildLogViewForCLI(abs, opts)
 	if err != nil {
@@ -1118,6 +1121,7 @@ func cmdCheck(args []string) error {
 	root := fs.String("root", ".", "repository root")
 	domain := fs.String("domain", "", "restrict check scope to one domain")
 	specID := fs.String("spec", "", "check one spec id against others in scope")
+	candidateFile := fs.String("file", "", "check a candidate spec file against canonical specs without ingesting it")
 	aiMode := fs.String("ai", "auto", "AI check mode: auto, from-response")
 	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
 	responseFile := fs.String("response-file", "", "JSON response file from headless AI check run")
@@ -1151,12 +1155,13 @@ func cmdCheck(args []string) error {
 	}
 
 	result, err := canon.CheckForCLI(abs, canon.CheckOptions{
-		Domain:       strings.TrimSpace(*domain),
-		SpecID:       strings.TrimSpace(*specID),
-		Write:        *write,
-		AIMode:       mode,
-		AIProvider:   provider,
-		ResponseFile: strings.TrimSpace(*responseFile),
+		Domain:        strings.TrimSpace(*domain),
+		SpecID:        strings.TrimSpace(*specID),
+		CandidateFile: strings.TrimSpace(*candidateFile),
+		Write:         *write,
+		AIMode:        mode,
+		AIProvider:    provider,
+		ResponseFile:  strings.TrimSpace(*responseFile),
 	})
 	if err != nil {
 		return err
@@ -1176,7 +1181,7 @@ func cmdCheck(args []string) error {
 	}
 
 	if !result.Passed {
-		return fmt.Errorf("check failed: %d conflicts across %d specs", result.TotalConflicts, result.TotalSpecs)
+		return fmt.Errorf("check failed: %d conflicts and %d readiness gaps across %d specs", result.TotalConflicts, result.TotalReadinessGaps, result.TotalSpecs)
 	}
 	return nil
 }
@@ -1324,7 +1329,7 @@ func collectRawInputInteractive(reader io.Reader, writer io.Writer) (string, err
 
 func renderCheckText(result canon.CheckResult) string {
 	lines := make([]string, 0)
-	if result.TotalConflicts == 0 {
+	if result.TotalConflicts == 0 && result.TotalReadinessGaps == 0 {
 		lines = append(lines, fmt.Sprintf("check passed: 0 conflicts across %d specs", result.TotalSpecs))
 		return strings.Join(lines, "\n") + "\n"
 	}
@@ -1371,10 +1376,20 @@ func renderCheckText(result canon.CheckResult) string {
 		}
 	}
 
+	for _, gap := range result.ReadinessGaps {
+		lines = append(lines, fmt.Sprintf("readiness gap: %s", gap.SpecID))
+		if strings.TrimSpace(gap.Title) != "" {
+			lines = append(lines, fmt.Sprintf("  title: %q", gap.Title))
+		}
+		lines = append(lines, fmt.Sprintf("  field: %s", gap.Field))
+		lines = append(lines, fmt.Sprintf("  message: %s", gap.Message))
+		lines = append(lines, "")
+	}
+
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
-	lines = append(lines, fmt.Sprintf("check failed: %d conflicts across %d specs", result.TotalConflicts, result.TotalSpecs))
+	lines = append(lines, fmt.Sprintf("check failed: %d conflicts and %d readiness gaps across %d specs", result.TotalConflicts, result.TotalReadinessGaps, result.TotalSpecs))
 	return strings.Join(lines, "\n") + "\n"
 }
 

@@ -16,15 +16,18 @@ type aiGCResponse struct {
 }
 
 type aiGCSpec struct {
-	ID             string   `json:"id"`
-	Type           string   `json:"type"`
-	Title          string   `json:"title"`
-	Domain         string   `json:"domain"`
-	Created        string   `json:"created"`
-	DependsOn      []string `json:"depends_on"`
-	TouchedDomains []string `json:"touched_domains"`
-	Consolidates   []string `json:"consolidates"`
-	Body           string   `json:"body"`
+	ID              string   `json:"id"`
+	Type            string   `json:"type"`
+	Title           string   `json:"title"`
+	Domain          string   `json:"domain"`
+	Created         string   `json:"created"`
+	RequirementKind string   `json:"requirement_kind"`
+	SourceIssue     string   `json:"source_issue"`
+	ApprovalState   string   `json:"approval_state"`
+	DependsOn       []string `json:"depends_on"`
+	TouchedDomains  []string `json:"touched_domains"`
+	Consolidates    []string `json:"consolidates"`
+	Body            string   `json:"body"`
 }
 
 func gcRunAIConsolidation(root string, target []Spec, mode string, aiProvider string, responseFile string) ([]aiGCSpec, error) {
@@ -184,6 +187,9 @@ func buildGCAPIPrompt(provider string, target []Spec) string {
 		`      "title": "string",`,
 		`      "domain": "string",`,
 		`      "created": "RFC3339 timestamp",`,
+		`      "requirement_kind": "product|technical_helper|",`,
+		`      "source_issue": "string",`,
+		`      "approval_state": "approved|draft|unknown|",`,
 		`      "depends_on": ["spec-id"],`,
 		`      "touched_domains": ["domain"],`,
 		`      "consolidates": ["source-spec-id"],`,
@@ -195,6 +201,7 @@ func buildGCAPIPrompt(provider string, target []Spec) string {
 		"Requirements:",
 		"- Every original spec id from the consolidation set must appear exactly once in one of the consolidates arrays.",
 		"- Keep domain metadata and type metadata where sensible for each consolidated spec.",
+		"- Preserve requirement_kind, source_issue, and approval_state when they remain true for the consolidated spec.",
 		"- Preserve all external depends_on entries from source specs into consolidated specs.",
 		"",
 		"## Canonical Specs To Consolidate",
@@ -210,6 +217,9 @@ func buildGCAPIPrompt(provider string, target []Spec) string {
 			"Type: "+spec.Type,
 			"Domain: "+spec.Domain,
 			"Created: "+spec.Created,
+			"RequirementKind: "+spec.RequirementKind,
+			"SourceIssue: "+spec.SourceIssue,
+			"ApprovalState: "+spec.ApprovalState,
 			"DependsOn: "+renderList(spec.DependsOn),
 			"TouchedDomains: "+renderList(spec.TouchedDomains),
 			"",
@@ -233,7 +243,7 @@ func gcConsolidationJSONSchema() string {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "type", "title", "domain", "created", "depends_on", "touched_domains", "consolidates", "body"],
+        "required": ["id", "type", "title", "domain", "created", "requirement_kind", "source_issue", "approval_state", "depends_on", "touched_domains", "consolidates", "body"],
         "additionalProperties": false,
         "properties": {
           "id": {"type": "string"},
@@ -241,6 +251,9 @@ func gcConsolidationJSONSchema() string {
           "title": {"type": "string"},
           "domain": {"type": "string"},
           "created": {"type": "string"},
+          "requirement_kind": {"type": "string"},
+          "source_issue": {"type": "string"},
+          "approval_state": {"type": "string"},
           "depends_on": {"type": "array", "items": {"type": "string"}},
           "touched_domains": {"type": "array", "items": {"type": "string"}},
           "consolidates": {"type": "array", "items": {"type": "string"}},

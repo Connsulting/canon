@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -40,24 +41,63 @@ func Check(root string, opts CheckOptions) (CheckResult, error) {
 		return CheckResult{}, err
 	}
 
+	var candidate *Spec
+	if strings.TrimSpace(opts.CandidateFile) != "" {
+		prepared, err := prepareCheckCandidateSpec(root, opts.CandidateFile)
+		if err != nil {
+			return CheckResult{}, err
+		}
+		candidate = &prepared
+	}
+
 	scoped := filterCheckSpecsByDomain(specs, opts.Domain)
+	checkSpecs := scoped
+	if candidate != nil {
+		for _, spec := range specs {
+			if spec.ID == candidate.ID {
+				return CheckResult{}, fmt.Errorf("candidate spec id already exists: %s", candidate.ID)
+			}
+		}
+		checkSpecs = append([]Spec{}, scoped...)
+		checkSpecs = append(checkSpecs, *candidate)
+		sort.Slice(checkSpecs, func(i, j int) bool {
+			return checkSpecs[i].ID < checkSpecs[j].ID
+		})
+	}
+
 	result := CheckResult{
-		Passed:         true,
-		TotalSpecs:     len(scoped),
-		TotalConflicts: 0,
-		Conflicts:      []CheckConflict{},
+		Passed:             true,
+		TotalSpecs:         len(checkSpecs),
+		TotalConflicts:     0,
+		TotalReadinessGaps: 0,
+		Conflicts:          []CheckConflict{},
+		ReadinessGaps:      []CheckReadinessGap{},
+	}
+	if candidate != nil {
+		result.Candidate = &CheckCandidate{
+			SpecID: candidate.ID,
+			Title:  candidate.Title,
+			Domain: candidate.Domain,
+			Path:   candidate.Path,
+		}
 	}
 
 	targetID := strings.TrimSpace(opts.SpecID)
-	if len(scoped) == 0 {
+	if candidate != nil {
+		if targetID != "" {
+			return CheckResult{}, errors.New("use either --spec or --file, not both")
+		}
+		targetID = candidate.ID
+	}
+	if len(checkSpecs) == 0 {
 		if targetID != "" {
 			return CheckResult{}, fmt.Errorf("spec not found in check scope: %s", targetID)
 		}
 		return result, nil
 	}
 
-	specByID := make(map[string]Spec, len(scoped))
-	for _, spec := range scoped {
+	specByID := make(map[string]Spec, len(checkSpecs))
+	for _, spec := range checkSpecs {
 		specByID[spec.ID] = spec
 	}
 
@@ -87,7 +127,7 @@ func Check(root string, opts CheckOptions) (CheckResult, error) {
 		if !aiProviderRuntimeReady(provider) {
 			return CheckResult{}, fmt.Errorf("ai provider %s is not runtime-ready", provider)
 		}
-		response, err = runHeadlessAICheck(provider, root, scoped, targetID)
+		response, err = runHeadlessAICheck(provider, root, checkSpecs, targetID)
 	case "from-response":
 		response, err = parseAICheckResponse(root, responseFile)
 	default:
@@ -117,9 +157,16 @@ func Check(root string, opts CheckOptions) (CheckResult, error) {
 		return conflicts[i].SpecA < conflicts[j].SpecA
 	})
 
+	readinessScope := scoped
+	if targetID != "" {
+		readinessScope = []Spec{specByID[targetID]}
+	}
+
 	result.Conflicts = conflicts
 	result.TotalConflicts = len(conflicts)
-	result.Passed = result.TotalConflicts == 0
+	result.ReadinessGaps = collectReadinessGaps(readinessScope)
+	result.TotalReadinessGaps = len(result.ReadinessGaps)
+	result.Passed = result.TotalConflicts == 0 && result.TotalReadinessGaps == 0
 
 	if opts.Write && result.TotalConflicts > 0 {
 		reportBuckets := map[string][]specConflict{}
@@ -151,6 +198,34 @@ func Check(root string, opts CheckOptions) (CheckResult, error) {
 	}
 
 	return result, nil
+}
+
+func prepareCheckCandidateSpec(root string, candidateFile string) (Spec, error) {
+	path := strings.TrimSpace(candidateFile)
+	if path == "" {
+		return Spec{}, errors.New("candidate file path is required")
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Spec{}, err
+	}
+	spec, err := provisionalSpecFromInput(string(raw), IngestInput{
+		IngestKind: "file",
+		File:       path,
+	}, nowUTC())
+	if err != nil {
+		return Spec{}, err
+	}
+	rel, relErr := filepath.Rel(root, path)
+	if relErr == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+		spec.Path = filepath.ToSlash(rel)
+	} else {
+		spec.Path = filepath.ToSlash(path)
+	}
+	return spec, nil
 }
 
 func runHeadlessAICheck(provider string, root string, specs []Spec, targetID string) (aiCheckResponse, error) {
@@ -409,12 +484,15 @@ func checkConflictsFromAIResponse(response aiCheckResponse, specByID map[string]
 		conflicts = append(conflicts, CheckConflict{
 			SpecA:          left,
 			TitleA:         leftSpec.Title,
+			DomainA:        leftSpec.Domain,
 			SpecB:          right,
 			TitleB:         rightSpec.Title,
+			DomainB:        rightSpec.Domain,
 			Domain:         domain,
 			StatementKey:   statementKey,
 			LineA:          lineA,
 			LineB:          lineB,
+			Reason:         reason,
 			OverlapDomains: overlap,
 		})
 	}

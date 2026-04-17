@@ -220,6 +220,166 @@ func TestCheckSupportsDomainAndSpecFilters(t *testing.T) {
 	}
 }
 
+func TestCheckReportsProductRequirementReadinessGaps(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCheckSpec(t, root, Spec{
+		ID:              "req-gap",
+		Type:            "feature",
+		Title:           "Incomplete Product Requirement",
+		Domain:          "product",
+		Created:         "2026-04-14T10:00:00Z",
+		RequirementKind: "product",
+		ApprovalState:   "draft",
+		TouchedDomains:  []string{"product"},
+		Body: `## Problem statement
+Known problem.`,
+	})
+
+	responsePath := writeAICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []map[string]any{},
+		},
+	})
+
+	result, err := Check(root, CheckOptions{
+		AIMode:       "from-response",
+		ResponseFile: responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check failed: %v", err)
+	}
+	if result.Passed {
+		t.Fatalf("expected readiness gaps to fail check")
+	}
+	if result.TotalConflicts != 0 {
+		t.Fatalf("expected no conflicts, got %d", result.TotalConflicts)
+	}
+	if result.TotalReadinessGaps == 0 {
+		t.Fatalf("expected readiness gaps")
+	}
+	got := formatReadinessGapMessages(result.ReadinessGaps)
+	if !strings.Contains(got, "source_issue is required") || !strings.Contains(got, "approval_state must be approved") {
+		t.Fatalf("missing expected readiness gaps:\n%s", got)
+	}
+}
+
+func TestCheckSpecFilterIgnoresUnrelatedReadinessGaps(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCheckSpec(t, root, Spec{
+		ID:             "ok",
+		Type:           "feature",
+		Title:          "Ready Technical Spec",
+		Domain:         "product",
+		Created:        "2026-04-14T10:00:00Z",
+		TouchedDomains: []string{"product"},
+		Body:           "Technical helper specs do not need product readiness metadata.",
+	})
+	writeCheckSpec(t, root, Spec{
+		ID:              "gap",
+		Type:            "feature",
+		Title:           "Incomplete Product Requirement",
+		Domain:          "product",
+		Created:         "2026-04-14T10:01:00Z",
+		RequirementKind: "product",
+		ApprovalState:   "draft",
+		TouchedDomains:  []string{"product"},
+		Body: `## Problem statement
+Known problem.`,
+	})
+
+	responsePath := writeAICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []map[string]any{},
+		},
+	})
+
+	targeted, err := Check(root, CheckOptions{
+		SpecID:       "ok",
+		AIMode:       "from-response",
+		ResponseFile: responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check spec filter failed: %v", err)
+	}
+	if !targeted.Passed || targeted.TotalReadinessGaps != 0 {
+		t.Fatalf("expected targeted check to ignore unrelated readiness gaps, got %+v", targeted)
+	}
+
+	full, err := Check(root, CheckOptions{
+		AIMode:       "from-response",
+		ResponseFile: responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check full scope failed: %v", err)
+	}
+	if full.Passed || full.TotalReadinessGaps == 0 {
+		t.Fatalf("expected full check to report readiness gaps, got %+v", full)
+	}
+}
+
+func TestCheckCandidateFileIgnoresUnrelatedExistingReadinessGaps(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCheckSpec(t, root, Spec{
+		ID:              "existing-gap",
+		Type:            "feature",
+		Title:           "Incomplete Existing Product Requirement",
+		Domain:          "product",
+		Created:         "2026-04-14T10:00:00Z",
+		RequirementKind: "product",
+		ApprovalState:   "draft",
+		TouchedDomains:  []string{"product"},
+		Body: `## Problem statement
+Known problem.`,
+	})
+	candidatePath := writeCheckCandidateFile(t, root, Spec{
+		ID:             "candidate-ready",
+		Type:           "feature",
+		Title:          "Ready Candidate",
+		Domain:         "product",
+		Created:        "2026-04-14T10:01:00Z",
+		TouchedDomains: []string{"product"},
+		Body:           "Technical candidate specs do not need product readiness metadata.",
+	})
+	responsePath := writeAICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": false,
+			"summary":       "No conflicts.",
+			"conflicts":     []map[string]any{},
+		},
+	})
+
+	result, err := Check(root, CheckOptions{
+		CandidateFile: candidatePath,
+		AIMode:        "from-response",
+		ResponseFile:  responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check candidate failed: %v", err)
+	}
+	if !result.Passed || result.TotalReadinessGaps != 0 {
+		t.Fatalf("expected candidate check to ignore unrelated existing readiness gaps, got %+v", result)
+	}
+}
+
 func TestCheckWriteCreatesConflictReports(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureLayout(root, true); err != nil {
@@ -283,6 +443,176 @@ func TestCheckWriteCreatesConflictReports(t *testing.T) {
 	}
 }
 
+func TestCheckCandidateFileDetectsAIConflictsWithoutWritingCandidate(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCheckSpec(t, root, Spec{
+		ID:             "api-auth-required",
+		Type:           "feature",
+		Title:          "API Auth Required",
+		Domain:         "api",
+		Created:        "2026-02-21T12:00:00Z",
+		TouchedDomains: []string{"api"},
+		Body:           "API endpoints must require authentication.",
+	})
+	candidatePath := writeCheckCandidateFile(t, root, Spec{
+		ID:             "api-auth-public",
+		Type:           "feature",
+		Title:          "Public API Access",
+		Domain:         "api",
+		Created:        "2026-04-14T10:00:00Z",
+		TouchedDomains: []string{"api"},
+		Body:           "Public API endpoints must not require authentication.",
+	})
+	responsePath := writeAICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": true,
+			"summary":       "Public API auth conflict.",
+			"conflicts": []map[string]any{
+				{
+					"spec_a":        "api-auth-required",
+					"spec_b":        "api-auth-public",
+					"domain":        "api",
+					"statement_key": "api auth required",
+					"line_a":        "API endpoints must require authentication.",
+					"line_b":        "Public API endpoints must not require authentication.",
+					"reason":        "Direct contradiction on API auth requirements.",
+				},
+			},
+		},
+	})
+
+	result, err := Check(root, CheckOptions{
+		CandidateFile: candidatePath,
+		AIMode:        "from-response",
+		ResponseFile:  responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check candidate failed: %v", err)
+	}
+	if result.Passed {
+		t.Fatalf("expected candidate conflict to fail")
+	}
+	if result.TotalSpecs != 2 || result.TotalConflicts != 1 {
+		t.Fatalf("unexpected candidate result: %+v", result)
+	}
+	if result.Candidate == nil || result.Candidate.SpecID != "api-auth-public" || result.Candidate.Domain != "api" {
+		t.Fatalf("unexpected candidate metadata: %+v", result.Candidate)
+	}
+	conflict := result.Conflicts[0]
+	if conflict.SpecA != "api-auth-required" || conflict.SpecB != "api-auth-public" {
+		t.Fatalf("unexpected conflict pair: %+v", conflict)
+	}
+	if conflict.DomainA != "api" || conflict.DomainB != "api" {
+		t.Fatalf("expected per-spec domains in conflict: %+v", conflict)
+	}
+	if conflict.Reason == "" {
+		t.Fatalf("expected conflict reason")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "api-auth-public.spec.md")); !os.IsNotExist(err) {
+		t.Fatalf("candidate spec should not be written, stat err=%v", err)
+	}
+	if reports := listCheckConflictReports(t, root); len(reports) != 0 {
+		t.Fatalf("candidate check without write should not create reports: %v", reports)
+	}
+}
+
+func TestCheckCandidateFileWriteOnlyCreatesConflictReport(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+
+	writeCheckSpec(t, root, Spec{
+		ID:             "audit-required",
+		Type:           "feature",
+		Title:          "Audit Required",
+		Domain:         "auth",
+		Created:        "2026-02-21T12:00:00Z",
+		TouchedDomains: []string{"auth"},
+		Body:           "Audit logs must retain user access history.",
+	})
+	candidatePath := writeCheckCandidateFile(t, root, Spec{
+		ID:             "audit-forbidden",
+		Type:           "feature",
+		Title:          "Audit Forbidden",
+		Domain:         "auth",
+		Created:        "2026-04-14T10:00:00Z",
+		TouchedDomains: []string{"auth"},
+		Body:           "Audit logs must not retain user access history.",
+	})
+	responsePath := writeAICheckResponse(t, root, map[string]any{
+		"model": "codex-headless",
+		"conflict_check": map[string]any{
+			"has_conflicts": true,
+			"summary":       "Audit conflict.",
+			"conflicts": []map[string]any{
+				{
+					"spec_a":        "audit-required",
+					"spec_b":        "audit-forbidden",
+					"domain":        "auth",
+					"statement_key": "audit retention",
+					"line_a":        "Audit logs must retain user access history.",
+					"line_b":        "Audit logs must not retain user access history.",
+					"reason":        "Direct contradiction.",
+				},
+			},
+		},
+	})
+
+	result, err := Check(root, CheckOptions{
+		CandidateFile: candidatePath,
+		Write:         true,
+		AIMode:        "from-response",
+		ResponseFile:  responsePath,
+	})
+	if err != nil {
+		t.Fatalf("Check candidate write failed: %v", err)
+	}
+	if len(result.ReportPaths) != 1 {
+		t.Fatalf("expected one report path, got %d", len(result.ReportPaths))
+	}
+	if _, err := os.Stat(filepath.Join(root, result.ReportPaths[0])); err != nil {
+		t.Fatalf("expected candidate report file to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".canon", "specs", "audit-forbidden.spec.md")); !os.IsNotExist(err) {
+		t.Fatalf("candidate spec should not be written, stat err=%v", err)
+	}
+}
+
+func TestCheckCandidateFileRejectsSpecFlag(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureLayout(root, true); err != nil {
+		t.Fatalf("EnsureLayout failed: %v", err)
+	}
+	candidatePath := writeCheckCandidateFile(t, root, Spec{
+		ID:             "candidate",
+		Type:           "feature",
+		Title:          "Candidate",
+		Domain:         "api",
+		Created:        "2026-04-14T10:00:00Z",
+		TouchedDomains: []string{"api"},
+		Body:           "Candidate behavior must be reviewed.",
+	})
+
+	_, err := Check(root, CheckOptions{
+		SpecID:        "candidate",
+		CandidateFile: candidatePath,
+		AIMode:        "from-response",
+		ResponseFile:  "unused.json",
+	})
+	if err == nil {
+		t.Fatalf("expected --spec and --file conflict error")
+	}
+	if !strings.Contains(err.Error(), "use either --spec or --file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeCheckSpec(t *testing.T, root string, spec Spec) {
 	t.Helper()
 	if spec.Type == "" {
@@ -299,6 +629,24 @@ func writeCheckSpec(t *testing.T, root string, spec Spec) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed writing check spec %s: %v", spec.ID, err)
 	}
+}
+
+func writeCheckCandidateFile(t *testing.T, root string, spec Spec) string {
+	t.Helper()
+	path := filepath.Join(root, "candidate-"+spec.ID+".md")
+	if err := os.WriteFile(path, []byte(canonicalSpecText(spec)), 0o644); err != nil {
+		t.Fatalf("failed writing candidate file %s: %v", spec.ID, err)
+	}
+	return path
+}
+
+func listCheckConflictReports(t *testing.T, root string) []string {
+	t.Helper()
+	reports, err := filepath.Glob(filepath.Join(root, ".canon", "conflict-reports", "*.yaml"))
+	if err != nil {
+		t.Fatalf("failed listing conflict reports: %v", err)
+	}
+	return reports
 }
 
 func writeAICheckResponse(t *testing.T, root string, payload map[string]any) string {
