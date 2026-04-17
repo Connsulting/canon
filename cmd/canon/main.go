@@ -82,11 +82,12 @@ func cmdInit(args []string) error {
 	root := fs.String("root", ".", "repository root")
 	aiMode := fs.String("ai", "auto", "AI mode: off, auto")
 	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
+	crawlMode := fs.String("crawl", "snapshot", "init crawl mode: snapshot or agentic")
 	responseFile := fs.String("response-file", "", "precomputed AI response JSON")
 	noInteractive := fs.Bool("no-interactive", false, "accept all generated specs without prompting")
 	acceptAll := fs.Bool("accept-all", false, "alias for --no-interactive")
 	maxSpecs := fs.Int("max-specs", 10, "maximum number of generated specs")
-	contextLimit := fs.Int("context-limit", 100, "max project context size in KB")
+	contextLimit := fs.Int("context-limit", 100, "max initial context or seed inventory size in KB")
 	var include stringSliceFlag
 	var exclude stringSliceFlag
 	fs.Var(&include, "include", "additional glob pattern to include in scan (repeatable)")
@@ -121,6 +122,13 @@ func cmdInit(args []string) error {
 	if strings.TrimSpace(*aiProviderFlag) != "" {
 		provider = strings.ToLower(strings.TrimSpace(*aiProviderFlag))
 	}
+	crawl := strings.ToLower(strings.TrimSpace(*crawlMode))
+	if crawl == "" {
+		crawl = "snapshot"
+	}
+	if crawl != "snapshot" && crawl != "agentic" {
+		return fmt.Errorf("unsupported init crawl mode: %s", crawl)
+	}
 
 	if mode == "off" {
 		if err := canon.EnsureLayout(abs, true); err != nil {
@@ -134,6 +142,7 @@ func cmdInit(args []string) error {
 	if _, err := canon.Init(abs, canon.InitOptions{
 		AIMode:       mode,
 		AIProvider:   provider,
+		CrawlMode:    crawl,
 		ResponseFile: strings.TrimSpace(*responseFile),
 		Interactive:  interactive,
 		MaxSpecs:     *maxSpecs,
@@ -1210,11 +1219,12 @@ func printUsage() {
 	fmt.Println("  --root <path>          repository root (default: \".\")")
 	fmt.Println("  --ai <mode>            AI mode: off, auto (default: \"auto\")")
 	fmt.Println("  --ai-provider <name>   AI provider: codex, claude (default: from .canonconfig)")
+	fmt.Println("  --crawl <mode>         init crawl mode: snapshot, agentic (default: \"snapshot\")")
 	fmt.Println("  --response-file <path> precomputed AI response JSON")
 	fmt.Println("  --no-interactive       accept all generated specs without review")
 	fmt.Println("  --accept-all           alias for --no-interactive")
 	fmt.Println("  --max-specs <n>        maximum specs to generate (default: 10)")
-	fmt.Println("  --context-limit <kb>   max project context size in KB (default: 100)")
+	fmt.Println("  --context-limit <kb>   max initial context or seed inventory size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
 	fmt.Println()

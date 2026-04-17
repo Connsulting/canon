@@ -21,6 +21,7 @@ const (
 	initDefaultMaxSpecs     = 10
 	initDefaultContextKB    = 100
 	initDefaultMaxFileBytes = 50 * 1024
+	initDefaultCrawlMode    = "snapshot"
 	initTreeDepth           = 3
 	initPreviewLines        = 20
 )
@@ -28,6 +29,7 @@ const (
 type InitOptions struct {
 	AIMode       string
 	AIProvider   string
+	CrawlMode    string
 	ResponseFile string
 	Interactive  bool
 	MaxSpecs     int
@@ -78,6 +80,12 @@ type initScanCandidate struct {
 	Size      int
 	Content   string
 	Truncated bool
+}
+
+type initScanEntry struct {
+	Path    string
+	AbsPath string
+	Symlink bool
 }
 
 type initScanReport struct {
@@ -134,6 +142,13 @@ func Init(root string, options InitOptions) (InitResult, error) {
 	if provider == "" {
 		provider = "codex"
 	}
+	crawlMode := strings.ToLower(strings.TrimSpace(options.CrawlMode))
+	if crawlMode == "" {
+		crawlMode = initDefaultCrawlMode
+	}
+	if crawlMode != "snapshot" && crawlMode != "agentic" {
+		return InitResult{}, fmt.Errorf("unsupported init crawl mode: %s", crawlMode)
+	}
 	maxSpecs := options.MaxSpecs
 	if maxSpecs <= 0 {
 		maxSpecs = initDefaultMaxSpecs
@@ -162,17 +177,39 @@ func Init(root string, options InitOptions) (InitResult, error) {
 		return InitResult{}, err
 	}
 
-	result := InitResult{
-		FoundFiles:    scan.FoundFiles,
-		IncludedFiles: scan.IncludedFiles,
-		ExcludedFiles: scan.ExcludedFiles,
-		ContextBytes:  scan.ContextBytes,
+	seedContext := scan.Context
+	seedIncluded := scan.IncludedFiles
+	seedBytes := scan.ContextBytes
+	includedLabel := "included in context"
+	sizeLabel := "Context size"
+	if crawlMode == "agentic" {
+		seedContext, seedIncluded = buildInitAgenticSeed(scan, contextLimitKB*1024)
+		seedBytes = len(seedContext)
+		includedLabel = "included in seed inventory"
+		sizeLabel = "Seed inventory size"
 	}
 
-	fmt.Fprintf(out, "  Found %d files (%d included in context, %d excluded)\n", scan.FoundFiles, scan.IncludedFiles, scan.ExcludedFiles)
-	fmt.Fprintf(out, "  Context size: %d KB / %d KB limit\n", scan.ContextBytes/1024, contextLimitKB)
+	result := InitResult{
+		FoundFiles:    scan.FoundFiles,
+		IncludedFiles: seedIncluded,
+		ExcludedFiles: scan.ExcludedFiles,
+		ContextBytes:  seedBytes,
+	}
 
-	if scan.IncludedFiles == 0 || strings.TrimSpace(scan.Context) == "" {
+	fmt.Fprintf(out, "  Crawl mode: %s\n", crawlMode)
+	fmt.Fprintf(out, "  Found %d files (%d %s, %d excluded)\n", scan.FoundFiles, seedIncluded, includedLabel, scan.ExcludedFiles)
+	fmt.Fprintf(out, "  %s: %d KB / %d KB limit\n", sizeLabel, seedBytes/1024, contextLimitKB)
+	if crawlMode == "agentic" {
+		fmt.Fprintln(out, "  Agentic mode may inspect additional repository files directly during AI decomposition.")
+	}
+
+	noProjectContext := strings.TrimSpace(seedContext) == ""
+	if crawlMode == "snapshot" {
+		noProjectContext = noProjectContext || seedIncluded == 0
+	} else {
+		noProjectContext = noProjectContext || len(scan.AllProjectFiles) == 0
+	}
+	if noProjectContext {
 		fmt.Fprintln(out, "No project files found. Skipping AI scan.")
 		return result, nil
 	}
@@ -194,7 +231,7 @@ func Init(root string, options InitOptions) (InitResult, error) {
 			result.FallbackUsed = true
 			break
 		}
-		aiResponse, err = runHeadlessAIInit(provider, root, scan, existing, maxSpecs)
+		aiResponse, err = runHeadlessAIInit(provider, root, scan, existing, maxSpecs, crawlMode, seedContext)
 		if err != nil {
 			fmt.Fprintf(out, "  Warning: AI decomposition unavailable (%v). Falling back to README bootstrap spec.\n", err)
 			aiResponse = fallbackAIInitResponse(scan)
@@ -424,6 +461,7 @@ func scanProjectForInit(root string, options initScanOptions) (initScanReport, e
 	}
 
 	candidates := make([]initScanCandidate, 0)
+	entries := make([]initScanEntry, 0)
 	allFiles := make([]string, 0)
 	readmeBody := ""
 	found := 0
@@ -450,46 +488,70 @@ func scanProjectForInit(root string, options initScanOptions) (initScanReport, e
 		}
 
 		found++
-		allFiles = append(allFiles, rel)
+		entries = append(entries, initScanEntry{
+			Path:    rel,
+			AbsPath: pathAbs,
+			Symlink: entry.Type()&fs.ModeSymlink != 0,
+		})
+		return nil
+	})
+	if err != nil {
+		return initScanReport{}, err
+	}
 
-		if entry.Type()&fs.ModeSymlink != 0 {
-			excluded++
-			return nil
-		}
+	rawPaths := make([]string, 0, len(entries))
+	for _, item := range entries {
+		rawPaths = append(rawPaths, item.Path)
+	}
+	gitIgnored, useGitIgnore := gitCheckIgnorePathSet(root, rawPaths)
 
+	for _, item := range entries {
+		rel := item.Path
 		forceInclude := matchAnyGlob(rel, options.Include)
 		if !forceInclude {
 			if matchAnyGlob(rel, options.Exclude) {
 				excluded++
-				return nil
+				continue
 			}
-			if matchesIgnorePatterns(rel, false, ignorePatterns) {
+			if useGitIgnore {
+				if gitIgnored[rel] {
+					excluded++
+					continue
+				}
+			} else if matchesIgnorePatterns(rel, false, ignorePatterns) {
 				excluded++
-				return nil
+				continue
 			}
 		}
+
+		if item.Symlink {
+			excluded++
+			continue
+		}
+
+		allFiles = append(allFiles, rel)
 
 		if isLikelyBinaryPath(rel) {
 			excluded++
-			return nil
+			continue
 		}
 
-		info, statErr := entry.Info()
+		info, statErr := os.Stat(item.AbsPath)
 		if statErr != nil {
-			return statErr
+			return initScanReport{}, statErr
 		}
 		if info.Size() > maxFile {
 			excluded++
-			return nil
+			continue
 		}
 
-		b, readErr := os.ReadFile(pathAbs)
+		b, readErr := os.ReadFile(item.AbsPath)
 		if readErr != nil {
-			return readErr
+			return initScanReport{}, readErr
 		}
 		if isBinaryContent(b) {
 			excluded++
-			return nil
+			continue
 		}
 
 		if strings.EqualFold(rel, "README.md") || strings.EqualFold(rel, "README") {
@@ -516,10 +578,6 @@ func scanProjectForInit(root string, options initScanOptions) (initScanReport, e
 			Content:   content,
 			Truncated: truncated,
 		})
-		return nil
-	})
-	if err != nil {
-		return initScanReport{}, err
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
@@ -548,6 +606,53 @@ func scanProjectForInit(root string, options initScanOptions) (initScanReport, e
 		Tree:            tree,
 		AllProjectFiles: allFiles,
 	}, nil
+}
+
+func gitCheckIgnorePathSet(root string, relPaths []string) (map[string]bool, bool) {
+	if len(relPaths) == 0 {
+		return map[string]bool{}, false
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, false
+	}
+	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
+		return nil, false
+	}
+
+	var input strings.Builder
+	for _, rel := range relPaths {
+		if strings.TrimSpace(rel) == "" {
+			continue
+		}
+		input.WriteString(rel)
+		input.WriteByte(0)
+	}
+	if input.Len() == 0 {
+		return map[string]bool{}, true
+	}
+
+	cmd := exec.Command("git", "check-ignore", "--stdin", "-z", "--verbose", "--non-matching", "--no-index")
+	cmd.Dir = root
+	cmd.Stdin = strings.NewReader(input.String())
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+
+	fields := strings.Split(string(output), "\x00")
+	ignored := make(map[string]bool)
+	for i := 0; i+3 < len(fields); i += 4 {
+		pattern := fields[i+2]
+		path := fields[i+3]
+		if path == "" {
+			continue
+		}
+		if pattern == "" || strings.HasPrefix(pattern, "!") {
+			continue
+		}
+		ignored[path] = true
+	}
+	return ignored, true
 }
 
 func shouldSkipDir(rel string) bool {
@@ -699,6 +804,102 @@ func buildDirectoryTree(files []string, depth int) string {
 	}
 	sort.Strings(lines)
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func buildInitAgenticSeed(scan initScanReport, limit int) (string, int) {
+	if limit <= 0 {
+		limit = initDefaultContextKB * 1024
+	}
+
+	var seed strings.Builder
+	appendChunk := func(chunk string) bool {
+		if chunk == "" {
+			return true
+		}
+		if seed.Len()+len(chunk) <= limit {
+			seed.WriteString(chunk)
+			return true
+		}
+		remaining := limit - seed.Len()
+		if remaining <= 256 {
+			return false
+		}
+		seed.WriteString(truncateText(chunk, remaining))
+		return false
+	}
+
+	if !appendChunk("# Canon Init Agentic Seed\n\n") {
+		return seed.String(), 0
+	}
+	if !appendChunk("This seed inventory is a starting point only. Inspect additional repository files directly as needed.\n\n") {
+		return seed.String(), 0
+	}
+
+	summary := fmt.Sprintf("- Available files after filtering: %d\n- Excluded during local scan: %d\n- README present: %t\n\n", len(scan.AllProjectFiles), scan.ExcludedFiles, strings.TrimSpace(scan.TopReadme) != "")
+	if !appendChunk(summary) {
+		return seed.String(), 0
+	}
+
+	if !appendChunk("## Directory Tree (depth-limited)\n") {
+		return seed.String(), 0
+	}
+	if !appendChunk(scan.Tree) {
+		return seed.String(), 0
+	}
+	if !appendChunk("\n") {
+		return seed.String(), 0
+	}
+
+	if !appendChunk("## High-Signal Paths\n") {
+		return seed.String(), 0
+	}
+	count := 0
+	for _, rel := range selectInitInventoryPaths(scan.AllProjectFiles, 120) {
+		if !appendChunk("- " + rel + "\n") {
+			break
+		}
+		count++
+	}
+
+	readme := strings.TrimSpace(scan.TopReadme)
+	if readme != "" {
+		appendChunk("\n## README Excerpt\n```\n")
+		appendChunk(truncateText(readme, 6000))
+		appendChunk("\n```\n")
+	}
+
+	return seed.String(), count
+}
+
+func selectInitInventoryPaths(files []string, max int) []string {
+	if max <= 0 {
+		max = 120
+	}
+	type candidate struct {
+		path     string
+		priority int
+	}
+	ranked := make([]candidate, 0, len(files))
+	for _, rel := range files {
+		ranked = append(ranked, candidate{
+			path:     rel,
+			priority: initFilePriority(rel),
+		})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].priority == ranked[j].priority {
+			return ranked[i].path < ranked[j].path
+		}
+		return ranked[i].priority < ranked[j].priority
+	})
+	if len(ranked) > max {
+		ranked = ranked[:max]
+	}
+	out := make([]string, 0, len(ranked))
+	for _, item := range ranked {
+		out = append(out, item.path)
+	}
+	return out
 }
 
 func buildInitContext(tree string, candidates []initScanCandidate, limit int) (string, int) {
@@ -912,8 +1113,8 @@ func orderInitDraftsByDependencies(drafts []initDraftSpec) []initDraftSpec {
 	return out
 }
 
-func runHeadlessAIInit(provider string, root string, scan initScanReport, existing []Spec, maxSpecs int) (aiInitResponse, error) {
-	prompt := buildAIInitPrompt(provider, scan, existing, maxSpecs)
+func runHeadlessAIInit(provider string, root string, scan initScanReport, existing []Spec, maxSpecs int, crawlMode string, seedContext string) (aiInitResponse, error) {
+	prompt := buildAIInitPrompt(provider, crawlMode, scan, existing, maxSpecs, seedContext)
 	schema := aiInitJSONSchema()
 
 	switch provider {
@@ -986,11 +1187,19 @@ func runHeadlessAIInit(provider string, root string, scan initScanReport, existi
 	}
 }
 
-func buildAIInitPrompt(provider string, scan initScanReport, existing []Spec, maxSpecs int) string {
+func buildAIInitPrompt(provider string, crawlMode string, scan initScanReport, existing []Spec, maxSpecs int, seedContext string) string {
+	if crawlMode == "agentic" {
+		return buildAIInitAgenticPrompt(provider, scan, existing, maxSpecs, seedContext)
+	}
+	return buildAIInitSnapshotPrompt(provider, existing, maxSpecs, seedContext)
+}
+
+func buildAIInitSnapshotPrompt(provider string, existing []Spec, maxSpecs int, seedContext string) string {
 	lines := []string{
 		"# Canon Init AI Decomposition",
 		"",
 		"Provider: " + provider,
+		"Crawl mode: snapshot",
 		"",
 		"Task:",
 		"1. Analyze the scanned project context.",
@@ -1026,11 +1235,69 @@ func buildAIInitPrompt(provider string, scan initScanReport, existing []Spec, ma
 		"",
 		"## Project Context",
 		"",
-		scan.Context,
-		"",
-		"## Existing Canonical Specs",
+		seedContext,
 		"",
 	}
+	return appendExistingInitSpecs(lines, existing)
+}
+
+func buildAIInitAgenticPrompt(provider string, scan initScanReport, existing []Spec, maxSpecs int, seedContext string) string {
+	lines := []string{
+		"# Canon Init AI Decomposition",
+		"",
+		"Provider: " + provider,
+		"Crawl mode: agentic",
+		"",
+		"Task:",
+		"1. Start from the seed inventory below, then inspect the repository directly using local tools as needed.",
+		"2. Determine the key components, user-facing features, workflows, infrastructure, and runtime wiring of the current project.",
+		"3. Read additional files beyond the seed inventory whenever the initial inventory is insufficient.",
+		"4. Prioritize entrypoints, manifests, docs, handlers, routes, tests, and infrastructure definitions while crawling.",
+		"5. Use feature specs for user-facing behavior and technical specs for architecture or infrastructure concerns.",
+		"6. Use depends_on and touched_domains when appropriate.",
+		"7. Describe current behavior only. Do not propose future work.",
+		"8. Do not modify repository files while analyzing the project.",
+		"9. Before finalizing, ensure major top-level areas from the inventory are either represented by at least one spec or intentionally omitted as non-product/support-only.",
+		"10. For each spec body, include multiple concrete behavior statements (target 4 to 7) when source evidence supports it.",
+		"11. Include concrete current-state behavior details in each body, not only high-level summaries.",
+		"12. Produce between 2 and " + strconv.Itoa(maxSpecs) + " specs that capture current project behavior.",
+		"13. Return JSON only following the schema.",
+		"",
+		"Repository scan summary:",
+		fmt.Sprintf("- Available files after filtering: %d", len(scan.AllProjectFiles)),
+		fmt.Sprintf("- Excluded during local scan: %d", scan.ExcludedFiles),
+		"",
+		"Schema:",
+		"{",
+		`  "model": "string",`,
+		`  "project_summary": "string",`,
+		`  "specs": [`,
+		`    {`,
+		`      "id": "7-char-hex",`,
+		`      "type": "feature|technical",`,
+		`      "title": "string",`,
+		`      "domain": "string",`,
+		`      "depends_on": ["spec-id"],`,
+		`      "touched_domains": ["domain"],`,
+		`      "body": "markdown",`,
+		`      "review_hint": "string"`,
+		`    }`,
+		`  ]`,
+		"}",
+		"",
+		"## Seed Inventory",
+		"",
+		seedContext,
+		"",
+	}
+	return appendExistingInitSpecs(lines, existing)
+}
+
+func appendExistingInitSpecs(lines []string, existing []Spec) string {
+	lines = append(lines,
+		"## Existing Canonical Specs",
+		"",
+	)
 	ordered := make([]Spec, len(existing))
 	copy(ordered, existing)
 	sortSpecsStable(ordered)

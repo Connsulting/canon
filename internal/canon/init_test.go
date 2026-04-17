@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -246,6 +247,94 @@ func TestInitFromResponseFileMalformedJSONReturnsError(t *testing.T) {
 	}
 }
 
+func TestInitRejectsUnsupportedCrawlMode(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+
+	_, err := Init(root, InitOptions{
+		AIMode:       "auto",
+		AIProvider:   "codex",
+		CrawlMode:    "weird",
+		Interactive:  false,
+		MaxSpecs:     10,
+		ContextLimit: 100,
+		Out:          &bytes.Buffer{},
+	})
+	if err == nil {
+		t.Fatalf("expected unsupported crawl mode error")
+	}
+	if !strings.Contains(err.Error(), "unsupported init crawl mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInitAgenticCrawlUsesSeedInventoryPrompt(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n\nImportant behavior.\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cmd"), 0o755); err != nil {
+		t.Fatalf("mkdir cmd failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write cmd/main.go failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{\"name\":\"sample\"}\n"), 0o644); err != nil {
+		t.Fatalf("write package.json failed: %v", err)
+	}
+
+	binDir := t.TempDir()
+	promptPath := filepath.Join(root, "captured-prompt.txt")
+	writeFakeInitCodex(t, filepath.Join(binDir, "codex"))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PROMPT_CAPTURE", promptPath)
+
+	out := &bytes.Buffer{}
+	result, err := Init(root, InitOptions{
+		AIMode:       "auto",
+		AIProvider:   "codex",
+		CrawlMode:    "agentic",
+		Interactive:  false,
+		MaxSpecs:     10,
+		ContextLimit: 100,
+		Out:          out,
+	})
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if result.AcceptedSpecs != 1 {
+		t.Fatalf("expected 1 accepted spec, got %d", result.AcceptedSpecs)
+	}
+
+	promptBytes, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("read prompt failed: %v", err)
+	}
+	prompt := string(promptBytes)
+	if !strings.Contains(prompt, "Crawl mode: agentic") {
+		t.Fatalf("expected agentic crawl marker in prompt")
+	}
+	if !strings.Contains(prompt, "inspect the repository directly using local tools as needed") {
+		t.Fatalf("expected direct inspection instructions in prompt")
+	}
+	if !strings.Contains(prompt, "## Seed Inventory") {
+		t.Fatalf("expected seed inventory section in prompt")
+	}
+	if strings.Contains(prompt, "## File: ") {
+		t.Fatalf("did not expect bundled file-content sections in agentic prompt")
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "included in seed inventory") {
+		t.Fatalf("expected seed inventory output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Agentic mode may inspect additional repository files directly during AI decomposition.") {
+		t.Fatalf("expected agentic crawl messaging, got:\n%s", output)
+	}
+}
+
 func TestInitAutoFallbackUsesReadmeWhenProviderUnavailable(t *testing.T) {
 	root := t.TempDir()
 	readme := "# Example Project\n\nCurrent behavior documentation."
@@ -407,6 +496,130 @@ func TestScanProjectForInitRespectsGitignore(t *testing.T) {
 	}
 }
 
+func TestScanProjectForInitUsesGitIgnoreRulesInGitRepo(t *testing.T) {
+	root := t.TempDir()
+	mustInitGitRepo(t, root)
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".vscode/*\n!.vscode/extensions.json\nfoo/\n!foo/keep.log\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".vscode"), 0o755); err != nil {
+		t.Fatalf("mkdir .vscode failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".vscode", "settings.json"), []byte("{\"theme\":\"dark\"}\n"), 0o644); err != nil {
+		t.Fatalf("write settings.json failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".vscode", "extensions.json"), []byte("{\"recommendations\":[]}\n"), 0o644); err != nil {
+		t.Fatalf("write extensions.json failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "foo"), 0o755); err != nil {
+		t.Fatalf("mkdir foo failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "foo", "a.txt"), []byte("ignored\n"), 0o644); err != nil {
+		t.Fatalf("write foo/a.txt failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "foo", "keep.log"), []byte("still ignored\n"), 0o644); err != nil {
+		t.Fatalf("write foo/keep.log failed: %v", err)
+	}
+
+	scan, err := scanProjectForInit(root, initScanOptions{
+		ContextLimitBytes: 100 * 1024,
+		MaxFileBytes:      initDefaultMaxFileBytes,
+	})
+	if err != nil {
+		t.Fatalf("scanProjectForInit failed: %v", err)
+	}
+	if strings.Contains(scan.Context, "## File: .vscode/settings.json") {
+		t.Fatalf("expected ignored .vscode/settings.json to be excluded from context")
+	}
+	if !strings.Contains(scan.Context, "## File: .vscode/extensions.json") {
+		t.Fatalf("expected negated .vscode/extensions.json to be included in context")
+	}
+	if strings.Contains(scan.Context, "## File: foo/keep.log") {
+		t.Fatalf("expected file under ignored parent directory to stay excluded")
+	}
+	if strings.Contains(scan.Tree, "settings.json") {
+		t.Fatalf("expected ignored .vscode/settings.json to be excluded from tree")
+	}
+	if !strings.Contains(scan.Tree, "extensions.json") {
+		t.Fatalf("expected negated .vscode/extensions.json to appear in tree")
+	}
+	if strings.Contains(scan.Tree, "foo") {
+		t.Fatalf("expected ignored foo directory to be excluded from tree")
+	}
+}
+
+func TestScanProjectForInitUsesNestedGitignoreInGitRepo(t *testing.T) {
+	root := t.TempDir()
+	mustInitGitRepo(t, root)
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o755); err != nil {
+		t.Fatalf("mkdir nested failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "nested", ".gitignore"), []byte("secret.txt\n"), 0o644); err != nil {
+		t.Fatalf("write nested .gitignore failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "nested", "secret.txt"), []byte("hidden\n"), 0o644); err != nil {
+		t.Fatalf("write nested/secret.txt failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "nested", "visible.txt"), []byte("shown\n"), 0o644); err != nil {
+		t.Fatalf("write nested/visible.txt failed: %v", err)
+	}
+
+	scan, err := scanProjectForInit(root, initScanOptions{
+		ContextLimitBytes: 100 * 1024,
+		MaxFileBytes:      initDefaultMaxFileBytes,
+	})
+	if err != nil {
+		t.Fatalf("scanProjectForInit failed: %v", err)
+	}
+	if strings.Contains(scan.Context, "## File: nested/secret.txt") {
+		t.Fatalf("expected nested gitignored file to be excluded from context")
+	}
+	if !strings.Contains(scan.Context, "## File: nested/visible.txt") {
+		t.Fatalf("expected nested visible file to be included in context")
+	}
+	if strings.Contains(scan.Tree, "secret.txt") {
+		t.Fatalf("expected nested gitignored file to be excluded from tree")
+	}
+	if !strings.Contains(scan.Tree, "visible.txt") {
+		t.Fatalf("expected nested visible file to be included in tree")
+	}
+}
+
+func TestScanProjectForInitIncludeOverridesGitignoreInGitRepo(t *testing.T) {
+	root := t.TempDir()
+	mustInitGitRepo(t, root)
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app.log"), []byte("retain me\n"), 0o644); err != nil {
+		t.Fatalf("write app.log failed: %v", err)
+	}
+
+	scan, err := scanProjectForInit(root, initScanOptions{
+		ContextLimitBytes: 100 * 1024,
+		MaxFileBytes:      initDefaultMaxFileBytes,
+		Include:           []string{"app.log"},
+	})
+	if err != nil {
+		t.Fatalf("scanProjectForInit failed: %v", err)
+	}
+	if !strings.Contains(scan.Context, "## File: app.log") {
+		t.Fatalf("expected --include to override gitignore for app.log")
+	}
+	if !strings.Contains(scan.Tree, "app.log") {
+		t.Fatalf("expected --include to restore app.log in the tree")
+	}
+}
+
 func TestScanProjectForInitSkipsCacheAndVenvArtifacts(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
@@ -502,6 +715,18 @@ func mustSymlinkOrSkip(t *testing.T, target string, link string) {
 	}
 }
 
+func mustInitGitRepo(t *testing.T, root string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git not available: %v", err)
+	}
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = root
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, strings.TrimSpace(string(output)))
+	}
+}
+
 func writeInitResponse(t *testing.T, path string, payload map[string]any) {
 	t.Helper()
 	b, err := json.MarshalIndent(payload, "", "  ")
@@ -510,5 +735,49 @@ func writeInitResponse(t *testing.T, path string, payload map[string]any) {
 	}
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatalf("write init response failed: %v", err)
+	}
+}
+
+func writeFakeInitCodex(t *testing.T, path string) {
+	t.Helper()
+	script := `#!/bin/sh
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+
+if [ -z "$out" ]; then
+  echo "missing output path" >&2
+  exit 2
+fi
+
+cat > "$PROMPT_CAPTURE"
+
+cat <<'JSON' > "$out"
+{
+  "model": "codex-headless",
+  "project_summary": "sample",
+  "specs": [
+    {
+      "id": "abc1234",
+      "type": "technical",
+      "title": "Project Overview",
+      "domain": "general",
+      "depends_on": [],
+      "touched_domains": ["general"],
+      "body": "The project exposes current behavior.",
+      "review_hint": "overview"
+    }
+  ]
+}
+JSON
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex failed: %v", err)
 	}
 }
