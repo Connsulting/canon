@@ -47,7 +47,7 @@ specs:
     domain: canon-cli
     touches: [canon-cli, config, ingest]
     depends_on: [b3f2d9c, e1bcd34]
-    depended_on_by: [8e6a1d2, a1e9c10]
+    depended_on_by: [8e6a1d2, a1e9c10, d4c8b12]
   b3f2d9c:
     title: "Canon Log Graph Readability Alignment"
     type: feature
@@ -90,6 +90,13 @@ specs:
     touches: [canon-cli]
     depends_on: [e2cc388]
     depended_on_by: [d72f3b8, f3c2d71]
+  d4c8b12:
+    title: "Init Review-First Acceptance"
+    type: technical
+    domain: init
+    touches: [canon-cli, init]
+    depends_on: [a94f2c1]
+    depended_on_by: []
   d72f3b8:
     title: "Canon Blame for Behavioral Provenance"
     type: feature
@@ -122,7 +129,7 @@ domains:
   ai-runtime:
     specs: [c5e7d91]
   canon-cli:
-    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b6e4c2a, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d72f3b8, e1bcd34, e2cc388, f3c2d71]
+    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b6e4c2a, b98ed16, c0d3f0f, c5e7d91, c9f6a10, d4c8b12, d72f3b8, e1bcd34, e2cc388, f3c2d71]
   config:
     specs: [a94f2c1, d72f3b8, e1bcd34]
   database:
@@ -132,7 +139,7 @@ domains:
   ingest:
     specs: [7c4d2e1, a94f2c1, b6e4c2a, b98ed16, c0d3f0f, d72f3b8, e1bcd34]
   init:
-    specs: [8e6a1d2]
+    specs: [8e6a1d2, d4c8b12]
   ledger:
     specs: [c0d3f0f, e1bcd34]
   release:
@@ -156,6 +163,8 @@ cross_domain_edges:
     domains: [canon-cli, ingest, ledger, state-render, tools]
   - spec: c5e7d91
     domains: [ai-runtime, canon-cli]
+  - spec: d4c8b12
+    domains: [canon-cli, init]
   - spec: d72f3b8
     domains: [canon-cli, config, ingest]
   - spec: e1bcd34

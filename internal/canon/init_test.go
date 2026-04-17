@@ -50,6 +50,7 @@ func TestInitFromResponseFileAcceptAllIngestsSpecs(t *testing.T) {
 		AIProvider:   "codex",
 		ResponseFile: responsePath,
 		Interactive:  false,
+		AcceptAll:    true,
 		MaxSpecs:     10,
 		ContextLimit: 100,
 		Out:          out,
@@ -81,6 +82,65 @@ func TestInitFromResponseFileAcceptAllIngestsSpecs(t *testing.T) {
 
 	if strings.Contains(out.String(), "Starting interactive review") {
 		t.Fatalf("did not expect interactive output when Interactive=false")
+	}
+}
+
+func TestInitFromResponseFileNonInteractiveRequiresExplicitAcceptance(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "init-response.json")
+	writeInitResponse(t, responsePath, map[string]any{
+		"model":           "test-model",
+		"project_summary": "Sample project.",
+		"specs": []map[string]any{
+			{
+				"id":              "aa11bb2",
+				"type":            "feature",
+				"title":           "Authentication",
+				"domain":          "auth",
+				"depends_on":      []string{},
+				"touched_domains": []string{"auth"},
+				"body":            "Users can sign in.",
+				"review_hint":     "Auth behavior.",
+			},
+		},
+	})
+
+	result, err := Init(root, InitOptions{
+		AIMode:       "auto",
+		AIProvider:   "codex",
+		ResponseFile: responsePath,
+		Interactive:  false,
+		MaxSpecs:     10,
+		ContextLimit: 100,
+		Out:          &bytes.Buffer{},
+	})
+	if err == nil {
+		t.Fatalf("expected explicit acceptance error")
+	}
+	if !strings.Contains(err.Error(), "require review") {
+		t.Fatalf("expected review-first guidance, got: %v", err)
+	}
+	if result.GeneratedSpecs != 1 || result.AcceptedSpecs != 0 {
+		t.Fatalf("expected generated-but-unaccepted result, got %+v", result)
+	}
+
+	specs, loadErr := loadSpecs(root)
+	if loadErr != nil {
+		t.Fatalf("loadSpecs failed: %v", loadErr)
+	}
+	if len(specs) != 0 {
+		t.Fatalf("expected no canonical specs, got %d", len(specs))
+	}
+	entries, ledgerErr := LoadLedger(root)
+	if ledgerErr != nil {
+		t.Fatalf("LoadLedger failed: %v", ledgerErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no ledger entries, got %d", len(entries))
 	}
 }
 
@@ -297,6 +357,7 @@ func TestInitAgenticCrawlUsesSeedInventoryPrompt(t *testing.T) {
 		AIProvider:   "codex",
 		CrawlMode:    "agentic",
 		Interactive:  false,
+		AcceptAll:    true,
 		MaxSpecs:     10,
 		ContextLimit: 100,
 		Out:          out,
@@ -368,6 +429,7 @@ func TestInitMultipassCrawlUsesManagedAreaPrompts(t *testing.T) {
 		AIProvider:   "codex",
 		CrawlMode:    "multipass",
 		Interactive:  false,
+		AcceptAll:    true,
 		MaxSpecs:     10,
 		ContextLimit: 100,
 		Out:          out,
@@ -430,6 +492,7 @@ func TestInitAutoFallbackUsesReadmeWhenProviderUnavailable(t *testing.T) {
 		AIMode:       "auto",
 		AIProvider:   "unsupported-provider",
 		Interactive:  false,
+		AcceptAll:    true,
 		MaxSpecs:     10,
 		ContextLimit: 100,
 		Out:          &bytes.Buffer{},

@@ -193,6 +193,13 @@ Supported providers: `codex`, `claude`.
 - `.canon/conflict-reports/`
 - `state/interactions/`
 
+## Init Bootstrap Review
+`canon init` scans existing project context and may generate bootstrap specs. Generated specs are review-first:
+- In an interactive terminal, Canon prompts for each generated spec. Accepted specs are ingested into `.canon/`; skipped specs and unreviewed specs after quit are preserved under `specs/init-drafts/`.
+- In non-interactive shells, generated specs are not canonicalized unless you explicitly pass `--accept-all` or `--no-interactive`.
+- `--response-file <path>` supports deterministic replay, but still requires interactive review or explicit bulk acceptance.
+- Use `--ai off` when you only want to create or repair the Canon layout.
+
 ## Typical Local Run
 ```bash
 go run ./cmd/canon init

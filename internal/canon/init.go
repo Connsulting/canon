@@ -35,6 +35,7 @@ type InitOptions struct {
 	CrawlMode    string
 	ResponseFile string
 	Interactive  bool
+	AcceptAll    bool
 	MaxSpecs     int
 	ContextLimit int
 	Include      []string
@@ -291,7 +292,7 @@ func Init(root string, options InitOptions) (InitResult, error) {
 	result.GeneratedSpecs = len(drafts)
 	fmt.Fprintf(out, "  Generating specs... done (%d specs produced)\n", len(drafts))
 
-	if !options.Interactive {
+	if options.AcceptAll {
 		for _, draft := range drafts {
 			if err := ingestInitDraft(root, draft.Spec); err != nil {
 				return result, err
@@ -299,6 +300,10 @@ func Init(root string, options InitOptions) (InitResult, error) {
 			result.AcceptedSpecs++
 		}
 		return result, nil
+	}
+
+	if !options.Interactive {
+		return result, fmt.Errorf("generated bootstrap specs require review before ingest; rerun in an interactive terminal to review each spec or pass --accept-all/--no-interactive to ingest all generated specs")
 	}
 
 	fmt.Fprintf(out, "\nStarting interactive review (%d specs to review):\n\n", len(drafts))

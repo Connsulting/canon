@@ -479,6 +479,79 @@ func TestInitCommandRejectsInvalidCrawlMode(t *testing.T) {
 	}
 }
 
+func TestInitCommandResponseFileNonTTYRequiresExplicitAcceptAll(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+
+	responsePath := filepath.Join(root, "init-response.json")
+	response := map[string]any{
+		"model":           "test-model",
+		"project_summary": "Sample project.",
+		"specs": []map[string]any{
+			{
+				"id":              "a1a1a1a",
+				"type":            "feature",
+				"title":           "Auth",
+				"domain":          "auth",
+				"depends_on":      []string{},
+				"touched_domains": []string{"auth"},
+				"body":            "Users can sign in.",
+				"review_hint":     "Auth hint.",
+			},
+		},
+	}
+	writeGCResponse(t, responsePath, response)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	_ = w.Close()
+	oldStdin := os.Stdin
+	os.Stdin = r
+	defer func() {
+		os.Stdin = oldStdin
+		_ = r.Close()
+	}()
+
+	err = run([]string{"init", "--root", root, "--response-file", responsePath})
+	if err == nil {
+		t.Fatalf("expected explicit accept-all error")
+	}
+	if !strings.Contains(err.Error(), "require review") {
+		t.Fatalf("expected review-first error, got: %v", err)
+	}
+
+	specs, loadErr := canon.LoadSpecsForCLI(root)
+	if loadErr != nil {
+		t.Fatalf("LoadSpecsForCLI failed: %v", loadErr)
+	}
+	if len(specs) != 0 {
+		t.Fatalf("expected no canonical specs, got %d", len(specs))
+	}
+	entries, ledgerErr := canon.LoadLedger(root)
+	if ledgerErr != nil {
+		t.Fatalf("LoadLedger failed: %v", ledgerErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no ledger entries, got %d", len(entries))
+	}
+}
+
+func TestInitCommandRejectsInvalidAIMode(t *testing.T) {
+	root := t.TempDir()
+
+	err := run([]string{"init", "--root", root, "--ai", "sometimes"})
+	if err == nil {
+		t.Fatalf("expected invalid init AI mode error")
+	}
+	if !strings.Contains(err.Error(), "unsupported init ai mode") {
+		t.Fatalf("unexpected invalid init AI mode error: %v", err)
+	}
+}
+
 func TestGcCommandDryRunNoWrite(t *testing.T) {
 	root := t.TempDir()
 	if err := canon.EnsureLayout(root, true); err != nil {
