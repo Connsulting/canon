@@ -74,6 +74,8 @@ Blame defaults:
 - `canon blame "<text>"` uses current directory as root
 - output defaults to human readable terminal text
 - AI provider defaults from config (`./.canonconfig`, then `~/.canonconfig`, then built in `codex`)
+- Positive JSON output includes `status: "specified"` plus per-result citation metadata resolved from `.canon/specs/*.spec.md` (`section`, `start_line`, `end_line`, `text`).
+- Gap JSON output is stable: `found: false`, `status: "unspecified"`, author-a-spec `guidance`, and `results: []`.
 Check options:
 - `--domain <name>` restrict conflict scan to matching spec domains
 - `--spec <id>` check one spec against the remaining in-scope specs

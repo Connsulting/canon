@@ -94,19 +94,30 @@ type BlameInput struct {
 }
 
 type BlameResult struct {
-	Query   string      `json:"query"`
-	Found   bool        `json:"found"`
-	Results []BlameSpec `json:"results,omitempty"`
+	Query    string      `json:"query"`
+	Found    bool        `json:"found"`
+	Status   string      `json:"status"`
+	Guidance string      `json:"guidance"`
+	Results  []BlameSpec `json:"results"`
 }
 
 type BlameSpec struct {
-	SpecID        string   `json:"spec_id"`
-	Title         string   `json:"title"`
-	Domain        string   `json:"domain"`
-	Confidence    string   `json:"confidence"`
-	Created       string   `json:"created"`
-	RelevantLines []string `json:"relevant_lines"`
+	SpecID        string          `json:"spec_id"`
+	Title         string          `json:"title"`
+	Domain        string          `json:"domain"`
+	Confidence    string          `json:"confidence"`
+	Created       string          `json:"created"`
+	Citations     []BlameCitation `json:"citations"`
+	RelevantLines []string        `json:"relevant_lines,omitempty"`
 }
+
+type BlameCitation struct {
+	Section   string `json:"section"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	Text      string `json:"text"`
+}
+
 type CheckOptions struct {
 	Domain        string
 	SpecID        string

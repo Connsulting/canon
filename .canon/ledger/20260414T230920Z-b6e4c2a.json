@@ -1,0 +1,14 @@
+{
+  "spec_id": "b6e4c2a",
+  "title": "Canon Blame Provenance and Gap JSON Contract",
+  "type": "feature",
+  "domain": "canon-cli",
+  "parents": [
+    "8cfdb59"
+  ],
+  "sequence": 1776208160267450886,
+  "ingested_at": "2026-04-14T23:09:20Z",
+  "content_hash": "bb29e4a020d6bd0de931dbbfd06744f3f67fb47b7f6bf006b5527c668abcd950",
+  "spec_path": ".canon/specs/b6e4c2a.spec.md",
+  "source_path": ".canon/sources/b6e4c2a.source.md"
+}

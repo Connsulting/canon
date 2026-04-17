@@ -85,3 +85,44 @@ func TestNarrowSpecsForBlamePrefersDomainAndKeywordMatches(t *testing.T) {
 		t.Fatalf("expected billing gating match to be retained")
 	}
 }
+
+func TestFindBlameCitationResolvesMarkdownSectionAndLines(t *testing.T) {
+	lines := []string{
+		"---",
+		"id: spec-123",
+		"---",
+		"# API Rules",
+		"",
+		"## Pagination",
+		"",
+		"- All list endpoints must return paginated responses.",
+		"- Default page size must be 25 items.",
+	}
+
+	citation, ok := findBlameCitation(lines, aiBlameCitation{
+		Text: "Default page size must be 25 items.",
+	})
+	if !ok {
+		t.Fatalf("expected citation match")
+	}
+	if citation.Section != "Pagination" {
+		t.Fatalf("expected nearest section Pagination, got %q", citation.Section)
+	}
+	if citation.StartLine != 9 || citation.EndLine != 9 {
+		t.Fatalf("expected line 9, got %d-%d", citation.StartLine, citation.EndLine)
+	}
+	if citation.Text != "Default page size must be 25 items." {
+		t.Fatalf("unexpected citation text: %q", citation.Text)
+	}
+}
+
+func TestFindBlameCitationRejectsUnresolvedText(t *testing.T) {
+	lines := []string{
+		"# API Rules",
+		"Default page size must be 25 items.",
+	}
+
+	if _, ok := findBlameCitation(lines, aiBlameCitation{Text: "Responses are translated."}); ok {
+		t.Fatalf("expected unresolved citation text to be rejected")
+	}
+}

@@ -23,9 +23,17 @@ type aiBlameResponse struct {
 }
 
 type aiBlameResult struct {
-	SpecID       string   `json:"spec_id"`
-	Confidence   string   `json:"confidence"`
-	RelevantLine []string `json:"relevant_lines"`
+	SpecID       string            `json:"spec_id"`
+	Confidence   string            `json:"confidence"`
+	Citations    []aiBlameCitation `json:"citations"`
+	RelevantLine []string          `json:"relevant_lines"`
+}
+
+type aiBlameCitation struct {
+	Section   string `json:"section"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	Text      string `json:"text"`
 }
 
 type scoredBlameSpec struct {
@@ -45,19 +53,13 @@ func Blame(root string, input BlameInput) (BlameResult, error) {
 	}
 	scoped := filterSpecsForBlameDomain(specs, input.Domain)
 	if len(scoped) == 0 {
-		return BlameResult{
-			Query: query,
-			Found: false,
-		}, nil
+		return unspecifiedBlameResult(query), nil
 	}
 
 	index := buildIndex(scoped)
 	narrowed := narrowSpecsForBlame(scoped, index, query, defaultBlameNarrowLimit)
 	if len(narrowed) == 0 {
-		return BlameResult{
-			Query: query,
-			Found: false,
-		}, nil
+		return unspecifiedBlameResult(query), nil
 	}
 
 	provider := strings.ToLower(strings.TrimSpace(input.AIProvider))
@@ -67,6 +69,9 @@ func Blame(root string, input BlameInput) (BlameResult, error) {
 	response, err := resolveAIBlameResponse(root, provider, input.ResponseFile, query, input.Domain, narrowed, index)
 	if err != nil {
 		return BlameResult{}, err
+	}
+	if !response.Found {
+		return unspecifiedBlameResult(query), nil
 	}
 
 	specByID := make(map[string]Spec, len(scoped))
@@ -89,12 +94,14 @@ func Blame(root string, input BlameInput) (BlameResult, error) {
 			continue
 		}
 		relevantLines := normalizeBlameLines(item.RelevantLine)
+		citations := resolveBlameCitations(spec, item)
 		results = append(results, BlameSpec{
 			SpecID:        spec.ID,
 			Title:         spec.Title,
 			Domain:        spec.Domain,
 			Confidence:    normalizeBlameConfidence(item.Confidence),
 			Created:       spec.Created,
+			Citations:     citations,
 			RelevantLines: relevantLines,
 		})
 		seen[specID] = struct{}{}
@@ -102,13 +109,25 @@ func Blame(root string, input BlameInput) (BlameResult, error) {
 
 	found := len(results) > 0
 	if !found {
-		results = nil
+		return unspecifiedBlameResult(query), nil
 	}
 	return BlameResult{
-		Query:   query,
-		Found:   found,
-		Results: results,
+		Query:    query,
+		Found:    found,
+		Status:   "specified",
+		Guidance: "",
+		Results:  results,
 	}, nil
+}
+
+func unspecifiedBlameResult(query string) BlameResult {
+	return BlameResult{
+		Query:    query,
+		Found:    false,
+		Status:   "unspecified",
+		Guidance: "No canonical spec covers this behavior. Author a spec before treating it as expected behavior.",
+		Results:  []BlameSpec{},
+	}
 }
 
 func filterSpecsForBlameDomain(specs []Spec, domain string) []Spec {
@@ -411,13 +430,14 @@ func buildAIBlamePrompt(provider string, query string, domain string, specs []Sp
 		"Task:",
 		"1. Match the behavior description to canonical specs that introduce or mandate it.",
 		"2. Return only specs from the provided corpus.",
-		"3. Extract exact requirement lines that justify each match.",
+		"3. Extract exact citation text from the canonical spec body that justifies each match.",
 		"4. Assign confidence using this rubric:",
 		"   - high: the spec explicitly states the behavior.",
 		"   - medium: the behavior is implied by the spec.",
 		"   - low: the behavior is a weak inference from the spec.",
 		"5. If nothing matches, set found=false and results=[].",
-		"6. Return JSON only with the schema below.",
+		"6. Do not invent line numbers; line numbers will be resolved by Canon from exact citation text.",
+		"7. Return JSON only with the schema below.",
 		"",
 		"Schema:",
 		"{",
@@ -427,6 +447,7 @@ func buildAIBlamePrompt(provider string, query string, domain string, specs []Sp
 		`    {`,
 		`      "spec_id": "spec-id",`,
 		`      "confidence": "high|medium|low",`,
+		`      "citations": [{"section": "string", "text": "exact excerpt"}],`,
 		`      "relevant_lines": ["string"]`,
 		"    }",
 		"  ]",
@@ -480,11 +501,23 @@ func aiBlameJSONSchema() string {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["spec_id", "confidence", "relevant_lines"],
+        "required": ["spec_id", "confidence", "citations", "relevant_lines"],
         "additionalProperties": false,
         "properties": {
           "spec_id": {"type": "string"},
           "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["section", "text"],
+              "additionalProperties": false,
+              "properties": {
+                "section": {"type": "string"},
+                "text": {"type": "string"}
+              }
+            }
+          },
           "relevant_lines": {
             "type": "array",
             "items": {"type": "string"}
@@ -528,11 +561,40 @@ func normalizeAIBlameResponse(response aiBlameResponse) aiBlameResponse {
 		results = append(results, aiBlameResult{
 			SpecID:       specID,
 			Confidence:   normalizeBlameConfidence(item.Confidence),
+			Citations:    normalizeAIBlameCitations(item.Citations),
 			RelevantLine: normalizeBlameLines(item.RelevantLine),
 		})
 	}
 	response.Results = results
 	return response
+}
+
+func normalizeAIBlameCitations(citations []aiBlameCitation) []aiBlameCitation {
+	if len(citations) == 0 {
+		return nil
+	}
+	out := make([]aiBlameCitation, 0, len(citations))
+	seen := map[string]struct{}{}
+	for _, citation := range citations {
+		text := strings.TrimSpace(citation.Text)
+		if text == "" {
+			continue
+		}
+		section := strings.TrimSpace(citation.Section)
+		key := section + "\x00" + text
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, aiBlameCitation{
+			Section: section,
+			Text:    text,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func normalizeBlameLines(lines []string) []string {
@@ -556,6 +618,119 @@ func normalizeBlameLines(lines []string) []string {
 		return nil
 	}
 	return out
+}
+
+func resolveBlameCitations(spec Spec, item aiBlameResult) []BlameCitation {
+	queries := make([]aiBlameCitation, 0, len(item.Citations)+len(item.RelevantLine))
+	queries = append(queries, item.Citations...)
+	for _, line := range item.RelevantLine {
+		queries = append(queries, aiBlameCitation{Text: line})
+	}
+	queries = normalizeAIBlameCitations(queries)
+	if len(queries) == 0 || strings.TrimSpace(spec.Path) == "" {
+		return []BlameCitation{}
+	}
+
+	b, err := os.ReadFile(spec.Path)
+	if err != nil {
+		return []BlameCitation{}
+	}
+	lines := strings.Split(string(b), "\n")
+	out := make([]BlameCitation, 0, len(queries))
+	seen := map[string]struct{}{}
+	for _, query := range queries {
+		citation, ok := findBlameCitation(lines, query)
+		if !ok {
+			continue
+		}
+		key := fmt.Sprintf("%d:%d:%s", citation.StartLine, citation.EndLine, citation.Text)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, citation)
+	}
+	if len(out) == 0 {
+		return []BlameCitation{}
+	}
+	return out
+}
+
+func findBlameCitation(lines []string, query aiBlameCitation) (BlameCitation, bool) {
+	excerptLines := normalizedExcerptLines(query.Text)
+	if len(excerptLines) == 0 {
+		return BlameCitation{}, false
+	}
+
+	for i := 0; i < len(lines); i++ {
+		if !lineMatchesBlameExcerpt(lines[i], excerptLines[0]) {
+			continue
+		}
+		if len(excerptLines) > 1 {
+			if i+len(excerptLines) > len(lines) {
+				continue
+			}
+			allMatch := true
+			for j := 1; j < len(excerptLines); j++ {
+				if !lineMatchesBlameExcerpt(lines[i+j], excerptLines[j]) {
+					allMatch = false
+					break
+				}
+			}
+			if !allMatch {
+				continue
+			}
+		}
+
+		startLine := i + 1
+		endLine := i + len(excerptLines)
+		return BlameCitation{
+			Section:   nearestMarkdownSection(lines, i),
+			StartLine: startLine,
+			EndLine:   endLine,
+			Text:      strings.Join(excerptLines, "\n"),
+		}, true
+	}
+
+	return BlameCitation{}, false
+}
+
+func normalizedExcerptLines(text string) []string {
+	fields := strings.Split(strings.TrimSpace(text), "\n")
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		line := normalizeBlameCitationText(field)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func lineMatchesBlameExcerpt(line string, excerpt string) bool {
+	normalizedLine := normalizeBlameCitationText(line)
+	if normalizedLine == "" || excerpt == "" {
+		return false
+	}
+	return normalizedLine == excerpt || strings.Contains(normalizedLine, excerpt)
+}
+
+func normalizeBlameCitationText(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+}
+
+func nearestMarkdownSection(lines []string, lineIndex int) string {
+	for i := lineIndex; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		heading := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+		if heading != "" {
+			return heading
+		}
+	}
+	return ""
 }
 
 func normalizeBlameConfidence(value string) string {
