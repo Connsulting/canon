@@ -1,0 +1,14 @@
+{
+  "spec_id": "f2a9c8d",
+  "title": "Canon Init Managed Multi-Pass Crawl",
+  "type": "feature",
+  "domain": "init",
+  "parents": [
+    "e4b8a6f"
+  ],
+  "sequence": 1775904799448597327,
+  "ingested_at": "2026-04-11T10:53:19Z",
+  "content_hash": "e1410f8afc7656a549be0d4e0b089f74c8bae46f8254dfe62dfd50e5d31ad070",
+  "spec_path": ".canon/specs/f2a9c8d.spec.md",
+  "source_path": ".canon/sources/f2a9c8d.source.md"
+}

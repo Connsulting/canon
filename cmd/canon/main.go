@@ -82,7 +82,7 @@ func cmdInit(args []string) error {
 	root := fs.String("root", ".", "repository root")
 	aiMode := fs.String("ai", "auto", "AI mode: off, auto")
 	aiProviderFlag := fs.String("ai-provider", "", "AI provider override: codex or claude")
-	crawlMode := fs.String("crawl", "snapshot", "init crawl mode: snapshot or agentic")
+	crawlMode := fs.String("crawl", "snapshot", "init crawl mode: snapshot, agentic, or multipass")
 	responseFile := fs.String("response-file", "", "precomputed AI response JSON")
 	noInteractive := fs.Bool("no-interactive", false, "accept all generated specs without prompting")
 	acceptAll := fs.Bool("accept-all", false, "alias for --no-interactive")
@@ -126,7 +126,7 @@ func cmdInit(args []string) error {
 	if crawl == "" {
 		crawl = "snapshot"
 	}
-	if crawl != "snapshot" && crawl != "agentic" {
+	if crawl != "snapshot" && crawl != "agentic" && crawl != "multipass" {
 		return fmt.Errorf("unsupported init crawl mode: %s", crawl)
 	}
 
@@ -1219,12 +1219,12 @@ func printUsage() {
 	fmt.Println("  --root <path>          repository root (default: \".\")")
 	fmt.Println("  --ai <mode>            AI mode: off, auto (default: \"auto\")")
 	fmt.Println("  --ai-provider <name>   AI provider: codex, claude (default: from .canonconfig)")
-	fmt.Println("  --crawl <mode>         init crawl mode: snapshot, agentic (default: \"snapshot\")")
+	fmt.Println("  --crawl <mode>         init crawl mode: snapshot, agentic, multipass (default: \"snapshot\")")
 	fmt.Println("  --response-file <path> precomputed AI response JSON")
 	fmt.Println("  --no-interactive       accept all generated specs without review")
 	fmt.Println("  --accept-all           alias for --no-interactive")
 	fmt.Println("  --max-specs <n>        maximum specs to generate (default: 10)")
-	fmt.Println("  --context-limit <kb>   max initial context or seed inventory size in KB (default: 100)")
+	fmt.Println("  --context-limit <kb>   max initial context, seed inventory, or per-area evidence size in KB (default: 100)")
 	fmt.Println("  --include <glob>       additional glob pattern to include (repeatable)")
 	fmt.Println("  --exclude <glob>       additional glob pattern to exclude (repeatable)")
 	fmt.Println()

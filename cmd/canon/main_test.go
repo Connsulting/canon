@@ -284,6 +284,86 @@ func TestInitCommandAgenticCrawlAcceptAllIngestsSpecs(t *testing.T) {
 	}
 }
 
+func TestInitCommandMultipassCrawlAcceptAllIngestsSpecs(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n\nCurrent behavior.\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "app"), 0o755); err != nil {
+		t.Fatalf("mkdir app failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app", "main.go"), []byte("package app\n"), 0o644); err != nil {
+		t.Fatalf("write app/main.go failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatalf("mkdir docs failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "architecture.md"), []byte("# Architecture\n"), 0o644); err != nil {
+		t.Fatalf("write docs/architecture.md failed: %v", err)
+	}
+
+	binDir := t.TempDir()
+	captureDir := filepath.Join(root, "prompts")
+	if err := os.MkdirAll(captureDir, 0o755); err != nil {
+		t.Fatalf("mkdir capture dir failed: %v", err)
+	}
+	writeCLIInitMultipassCodex(t, filepath.Join(binDir, "codex"))
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PROMPT_CAPTURE_DIR", captureDir)
+	t.Setenv("HOME", t.TempDir())
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"init", "--root", root, "--crawl", "multipass", "--accept-all"}); err != nil {
+			t.Fatalf("init command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Crawl mode: multipass") {
+		t.Fatalf("expected crawl mode output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Planning managed crawl") {
+		t.Fatalf("expected multipass planning output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Synthesizing specs from area analyses") {
+		t.Fatalf("expected multipass synthesis output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "layout ready at") {
+		t.Fatalf("expected final layout message, got:\n%s", out)
+	}
+
+	prompts, err := filepath.Glob(filepath.Join(captureDir, "prompt-*.txt"))
+	if err != nil {
+		t.Fatalf("glob prompts failed: %v", err)
+	}
+	if len(prompts) < 2 {
+		t.Fatalf("expected multiple prompts for multipass crawl, got %d", len(prompts))
+	}
+	combined := strings.Builder{}
+	for _, promptPath := range prompts {
+		b, err := os.ReadFile(promptPath)
+		if err != nil {
+			t.Fatalf("read prompt failed: %v", err)
+		}
+		combined.Write(b)
+		combined.WriteString("\n")
+	}
+	if !strings.Contains(combined.String(), "# Canon Init Area Analysis") {
+		t.Fatalf("expected captured per-area prompt, got:\n%s", combined.String())
+	}
+	if !strings.Contains(combined.String(), "## Area Analyses") {
+		t.Fatalf("expected captured synthesis prompt, got:\n%s", combined.String())
+	}
+
+	specs, err := canon.LoadSpecsForCLI(root)
+	if err != nil {
+		t.Fatalf("LoadSpecsForCLI failed: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("expected 1 ingested spec, got %d", len(specs))
+	}
+}
+
 func TestInitCommandRejectsInvalidCrawlMode(t *testing.T) {
 	root := t.TempDir()
 	err := run([]string{"init", "--root", root, "--crawl", "weird", "--ai", "off"})
@@ -1592,6 +1672,76 @@ JSON
 `
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("failed writing fake init codex binary: %v", err)
+	}
+}
+
+func writeCLIInitMultipassCodex(t *testing.T, path string) {
+	t.Helper()
+	script := `#!/bin/sh
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+
+if [ -z "$out" ]; then
+  echo "missing output path" >&2
+  exit 2
+fi
+
+prompt="$(cat)"
+if [ -n "$PROMPT_CAPTURE_DIR" ]; then
+  n=$(ls "$PROMPT_CAPTURE_DIR"/prompt-*.txt 2>/dev/null | wc -l)
+  n=$((n + 1))
+  printf '%s' "$prompt" > "$PROMPT_CAPTURE_DIR/prompt-$n.txt"
+elif [ -n "$PROMPT_CAPTURE" ]; then
+  printf '%s' "$prompt" > "$PROMPT_CAPTURE"
+fi
+
+if printf '%s' "$prompt" | grep -q "Canon Init Area Analysis"; then
+  cat <<'JSON' > "$out"
+{
+  "model": "codex-headless",
+  "area": "sample-area",
+  "summary": "Area contains current behavior.",
+  "components": ["component"],
+  "user_facing_features": ["feature"],
+  "technical_behaviors": ["technical behavior"],
+  "runtime_wiring": ["runtime wiring"],
+  "risks_or_gaps": [],
+  "evidence_files": ["README.md"],
+  "support_only": false,
+  "omission_reason": ""
+}
+JSON
+  exit 0
+fi
+
+cat <<'JSON' > "$out"
+{
+  "model": "codex-headless",
+  "project_summary": "sample",
+  "specs": [
+    {
+      "id": "b2b2b2b",
+      "type": "technical",
+      "title": "Managed Crawl Overview",
+      "domain": "general",
+      "depends_on": [],
+      "touched_domains": ["general"],
+      "body": "The project exposes current behavior discovered through managed crawl summaries.",
+      "review_hint": "overview"
+    }
+  ]
+}
+JSON
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed writing fake multipass init codex binary: %v", err)
 	}
 }
 

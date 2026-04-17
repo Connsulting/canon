@@ -335,6 +335,90 @@ func TestInitAgenticCrawlUsesSeedInventoryPrompt(t *testing.T) {
 	}
 }
 
+func TestInitMultipassCrawlUsesManagedAreaPrompts(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Sample\n\nImportant behavior.\n"), 0o644); err != nil {
+		t.Fatalf("write README failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "app"), 0o755); err != nil {
+		t.Fatalf("mkdir app failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app", "main.go"), []byte("package app\n"), 0o644); err != nil {
+		t.Fatalf("write app/main.go failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatalf("mkdir docs failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "architecture.md"), []byte("# Architecture\n"), 0o644); err != nil {
+		t.Fatalf("write docs/architecture.md failed: %v", err)
+	}
+
+	binDir := t.TempDir()
+	captureDir := filepath.Join(root, "prompts")
+	if err := os.MkdirAll(captureDir, 0o755); err != nil {
+		t.Fatalf("mkdir capture dir failed: %v", err)
+	}
+	writeFakeInitMultipassCodex(t, filepath.Join(binDir, "codex"))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PROMPT_CAPTURE_DIR", captureDir)
+
+	out := &bytes.Buffer{}
+	result, err := Init(root, InitOptions{
+		AIMode:       "auto",
+		AIProvider:   "codex",
+		CrawlMode:    "multipass",
+		Interactive:  false,
+		MaxSpecs:     10,
+		ContextLimit: 100,
+		Out:          out,
+	})
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if result.AcceptedSpecs != 1 {
+		t.Fatalf("expected 1 accepted spec, got %d", result.AcceptedSpecs)
+	}
+
+	prompts, err := filepath.Glob(filepath.Join(captureDir, "prompt-*.txt"))
+	if err != nil {
+		t.Fatalf("glob prompts failed: %v", err)
+	}
+	if len(prompts) < 2 {
+		t.Fatalf("expected multiple managed provider prompts, got %d", len(prompts))
+	}
+
+	combined := strings.Builder{}
+	for _, promptPath := range prompts {
+		b, err := os.ReadFile(promptPath)
+		if err != nil {
+			t.Fatalf("read prompt failed: %v", err)
+		}
+		combined.Write(b)
+		combined.WriteString("\n--- prompt boundary ---\n")
+	}
+	promptText := combined.String()
+	if !strings.Contains(promptText, "# Canon Init Area Analysis") {
+		t.Fatalf("expected per-area analysis prompt, got:\n%s", promptText)
+	}
+	if !strings.Contains(promptText, "Crawl mode: multipass") {
+		t.Fatalf("expected multipass prompt marker, got:\n%s", promptText)
+	}
+	if !strings.Contains(promptText, "## Area Analyses") {
+		t.Fatalf("expected synthesis prompt to include area analyses, got:\n%s", promptText)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "Planning managed crawl") {
+		t.Fatalf("expected multipass planning output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Analyzing area") {
+		t.Fatalf("expected multipass area output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Synthesizing specs from area analyses") {
+		t.Fatalf("expected multipass synthesis output, got:\n%s", output)
+	}
+}
+
 func TestInitAutoFallbackUsesReadmeWhenProviderUnavailable(t *testing.T) {
 	root := t.TempDir()
 	readme := "# Example Project\n\nCurrent behavior documentation."
@@ -369,6 +453,75 @@ func TestInitAutoFallbackUsesReadmeWhenProviderUnavailable(t *testing.T) {
 	}
 	if !strings.Contains(specs[0].Body, "Current behavior documentation.") {
 		t.Fatalf("expected README body in fallback spec, got:\n%s", specs[0].Body)
+	}
+}
+
+func TestBuildInitCrawlAreasGroupsRootAndTopLevelDeterministically(t *testing.T) {
+	files := []string{
+		"scripts/setup.sh",
+		"app/main.go",
+		"README.md",
+		"docs/architecture.md",
+		"package.json",
+		"e2e/login.spec.ts",
+	}
+
+	areas := buildInitCrawlAreas(files, 0)
+	names := make([]string, 0, len(areas))
+	for _, area := range areas {
+		names = append(names, area.Name)
+	}
+	expected := []string{"root", "docs", "app", "e2e", "scripts"}
+	if strings.Join(names, ",") != strings.Join(expected, ",") {
+		t.Fatalf("expected areas %v, got %v", expected, names)
+	}
+
+	capped := buildInitCrawlAreas(files, 3)
+	if len(capped) != 3 {
+		t.Fatalf("expected 3 capped areas, got %d", len(capped))
+	}
+	if capped[0].Name != "root" || capped[1].Name != "docs" || capped[2].Name != "other" {
+		t.Fatalf("expected capped areas [root docs other], got [%s %s %s]", capped[0].Name, capped[1].Name, capped[2].Name)
+	}
+}
+
+func TestBuildInitAreaEvidencePackSkipsBinaryAndOversizedContent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte("{\"name\":\"sample\"}\n"), 0o644); err != nil {
+		t.Fatalf("write package.json failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "image.png"), []byte{0, 1, 2, 3}, 0o644); err != nil {
+		t.Fatalf("write image.png failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "large.txt"), []byte(strings.Repeat("x", initDefaultMaxFileBytes+1)), 0o644); err != nil {
+		t.Fatalf("write large.txt failed: %v", err)
+	}
+
+	area := initCrawlArea{
+		Name:  "root",
+		Files: []string{"image.png", "large.txt", "main.go", "package.json"},
+	}
+	pack, selected, err := buildInitAreaEvidencePack(root, area, 100*1024)
+	if err != nil {
+		t.Fatalf("buildInitAreaEvidencePack failed: %v", err)
+	}
+	if !strings.Contains(pack, "### package.json") {
+		t.Fatalf("expected package.json excerpt, got:\n%s", pack)
+	}
+	if !strings.Contains(pack, "### main.go") {
+		t.Fatalf("expected main.go excerpt, got:\n%s", pack)
+	}
+	if strings.Contains(pack, "### image.png") {
+		t.Fatalf("did not expect binary image excerpt, got:\n%s", pack)
+	}
+	if strings.Contains(pack, "### large.txt") {
+		t.Fatalf("did not expect oversized file excerpt, got:\n%s", pack)
+	}
+	if strings.Join(selected, ",") != "package.json,main.go" {
+		t.Fatalf("expected selected evidence [package.json main.go], got %v", selected)
 	}
 }
 
@@ -779,5 +932,75 @@ JSON
 `
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake codex failed: %v", err)
+	}
+}
+
+func writeFakeInitMultipassCodex(t *testing.T, path string) {
+	t.Helper()
+	script := `#!/bin/sh
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+
+if [ -z "$out" ]; then
+  echo "missing output path" >&2
+  exit 2
+fi
+
+prompt="$(cat)"
+if [ -n "$PROMPT_CAPTURE_DIR" ]; then
+  n=$(ls "$PROMPT_CAPTURE_DIR"/prompt-*.txt 2>/dev/null | wc -l)
+  n=$((n + 1))
+  printf '%s' "$prompt" > "$PROMPT_CAPTURE_DIR/prompt-$n.txt"
+elif [ -n "$PROMPT_CAPTURE" ]; then
+  printf '%s' "$prompt" > "$PROMPT_CAPTURE"
+fi
+
+if printf '%s' "$prompt" | grep -q "Canon Init Area Analysis"; then
+  cat <<'JSON' > "$out"
+{
+  "model": "codex-headless",
+  "area": "sample-area",
+  "summary": "Area contains current behavior.",
+  "components": ["component"],
+  "user_facing_features": ["feature"],
+  "technical_behaviors": ["technical behavior"],
+  "runtime_wiring": ["runtime wiring"],
+  "risks_or_gaps": [],
+  "evidence_files": ["README.md"],
+  "support_only": false,
+  "omission_reason": ""
+}
+JSON
+  exit 0
+fi
+
+cat <<'JSON' > "$out"
+{
+  "model": "codex-headless",
+  "project_summary": "sample",
+  "specs": [
+    {
+      "id": "def5678",
+      "type": "technical",
+      "title": "Managed Crawl Overview",
+      "domain": "general",
+      "depends_on": [],
+      "touched_domains": ["general"],
+      "body": "The project exposes current behavior discovered through managed crawl summaries.",
+      "review_hint": "overview"
+    }
+  ]
+}
+JSON
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake multipass codex failed: %v", err)
 	}
 }
