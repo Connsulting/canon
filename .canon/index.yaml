@@ -6,6 +6,13 @@ specs:
     touches: [database]
     depends_on: [9ad4f11]
     depended_on_by: [c5e7d91]
+  6a7c9d4:
+    title: "Init Gitignore-Aware Scan"
+    type: technical
+    domain: init
+    touches: [canon-cli, init]
+    depends_on: [8cfdb59, 8e6a1d2, a94f2c1]
+    depended_on_by: [e4b8a6f]
   7c4d2e1:
     title: "Lint and Style Compliance Cleanup for Go CLI"
     type: technical
@@ -19,14 +26,14 @@ specs:
     domain: general
     touches: [general]
     depends_on: [c5e7d91]
-    depended_on_by: [b6e4c2a]
+    depended_on_by: [6a7c9d4, ab8c1ec, b6e4c2a]
   8e6a1d2:
     title: "Init Symlink Scan Stability"
     type: technical
     domain: init
     touches: [canon-cli, init]
     depends_on: [a1e9c10, a94f2c1]
-    depended_on_by: [7c4d2e1]
+    depended_on_by: [6a7c9d4, 7c4d2e1]
   9ad4f11:
     title: "Go Dependency Risk Scanner"
     type: technical
@@ -47,7 +54,14 @@ specs:
     domain: canon-cli
     touches: [canon-cli, config, ingest]
     depends_on: [b3f2d9c, e1bcd34]
-    depended_on_by: [8e6a1d2, a1e9c10, d4c8b12]
+    depended_on_by: [6a7c9d4, 8e6a1d2, a1e9c10, d4c8b12, e4b8a6f]
+  ab8c1ec:
+    title: "Repository Health and Layout Repair"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli, init, layout, status]
+    depends_on: [8cfdb59]
+    depended_on_by: []
   b3f2d9c:
     title: "Canon Log Graph Readability Alignment"
     type: feature
@@ -82,7 +96,7 @@ specs:
     domain: canon-cli
     touches: [canon-cli]
     depends_on: [b6e4c2a]
-    depended_on_by: []
+    depended_on_by: [e7d4f10]
   c5e7d91:
     title: "Semantic Diff Explainer"
     type: technical
@@ -125,6 +139,27 @@ specs:
     touches: [canon-cli]
     depends_on: [b98ed16]
     depended_on_by: [c9f6a10]
+  e4b8a6f:
+    title: "Canon Init Agentic Crawl Mode"
+    type: feature
+    domain: init
+    touches: [ai-runtime, canon-cli, init]
+    depends_on: [6a7c9d4, a94f2c1]
+    depended_on_by: [f2a9c8d]
+  e7d4f10:
+    title: "PII Exposure Scanner v3"
+    type: feature
+    domain: canon-cli
+    touches: [canon-cli]
+    depends_on: [c1a0580]
+    depended_on_by: []
+  f2a9c8d:
+    title: "Canon Init Managed Multi-Pass Crawl"
+    type: feature
+    domain: init
+    touches: [ai-runtime, canon-cli, init]
+    depends_on: [e4b8a6f]
+    depended_on_by: []
   f3c2d71:
     title: "Add canon check for post merge semantic contradiction scans"
     type: technical
@@ -134,9 +169,9 @@ specs:
     depended_on_by: [c0d3f0f]
 domains:
   ai-runtime:
-    specs: [c5e7d91]
+    specs: [c5e7d91, e4b8a6f, f2a9c8d]
   canon-cli:
-    specs: [7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, b3f2d9c, b6e4c2a, b98ed16, c0d3f0f, c1a0580, c5e7d91, c9f6a10, d4c8b12, d72f3b8, e1bcd34, e2cc388, f3c2d71]
+    specs: [6a7c9d4, 7c4d2e1, 8e6a1d2, 9ad4f11, a94f2c1, ab8c1ec, b3f2d9c, b6e4c2a, b98ed16, c0d3f0f, c1a0580, c5e7d91, c9f6a10, d4c8b12, d72f3b8, e1bcd34, e2cc388, e4b8a6f, e7d4f10, f2a9c8d, f3c2d71]
   config:
     specs: [a94f2c1, d72f3b8, e1bcd34]
   database:
@@ -146,22 +181,30 @@ domains:
   ingest:
     specs: [7c4d2e1, a94f2c1, b6e4c2a, b98ed16, c0d3f0f, d72f3b8, e1bcd34]
   init:
-    specs: [8e6a1d2, d4c8b12]
+    specs: [6a7c9d4, 8e6a1d2, ab8c1ec, d4c8b12, e4b8a6f, f2a9c8d]
+  layout:
+    specs: [ab8c1ec]
   ledger:
     specs: [c0d3f0f, e1bcd34]
   release:
     specs: [a1e9c10]
   state-render:
     specs: [b98ed16, c0d3f0f, e1bcd34]
+  status:
+    specs: [ab8c1ec]
   tools:
     specs: [c0d3f0f]
 cross_domain_edges:
+  - spec: 6a7c9d4
+    domains: [canon-cli, init]
   - spec: 7c4d2e1
     domains: [canon-cli, ingest]
   - spec: 8e6a1d2
     domains: [canon-cli, init]
   - spec: a94f2c1
     domains: [canon-cli, config, ingest]
+  - spec: ab8c1ec
+    domains: [canon-cli, init, layout, status]
   - spec: b6e4c2a
     domains: [canon-cli, ingest]
   - spec: b98ed16
@@ -176,3 +219,7 @@ cross_domain_edges:
     domains: [canon-cli, config, ingest]
   - spec: e1bcd34
     domains: [canon-cli, config, ingest, ledger, state-render]
+  - spec: e4b8a6f
+    domains: [ai-runtime, canon-cli, init]
+  - spec: f2a9c8d
+    domains: [ai-runtime, canon-cli, init]
