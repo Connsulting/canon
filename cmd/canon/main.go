@@ -87,6 +87,8 @@ func run(args []string) error {
 		return cmdSchemaEvolution(args[1:])
 	case "semantic-diff":
 		return cmdSemanticDiff(args[1:])
+	case "pii-scan":
+		return cmdPIIScan(args[1:])
 	case "version", "-v", "--version":
 		return cmdVersion(args[1:])
 	case "help", "-h", "--help":
@@ -864,6 +866,88 @@ func cmdSemanticDiff(args []string) error {
 	return nil
 }
 
+func cmdPIIScan(args []string) error {
+	fs := flag.NewFlagSet("pii-scan", flag.ContinueOnError)
+	root := fs.String("root", ".", "repository root")
+	jsonOut := fs.Bool("json", false, "output machine-readable JSON")
+	failOnFlag := fs.String("fail-on", "", "fail when highest severity meets/exceeds: low, medium, high, critical")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("pii-scan does not accept positional arguments")
+	}
+
+	failOn := canon.PIIScanSeverity("")
+	if strings.TrimSpace(*failOnFlag) != "" {
+		parsed, err := canon.ParsePIIScanSeverityForCLI(*failOnFlag)
+		if err != nil || parsed == canon.PIIScanSeverityNone {
+			return fmt.Errorf("invalid --fail-on severity %q (expected one of: low, medium, high, critical)", strings.TrimSpace(*failOnFlag))
+		}
+		failOn = parsed
+	}
+
+	abs, err := filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := canon.PIIScanForCLI(abs, canon.PIIScanOptions{FailOn: failOn})
+	if err != nil {
+		return err
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		fmt.Print(renderPIIScanText(result))
+	}
+
+	if failOn != "" && canon.PIIScanExceedsThresholdForCLI(result, failOn) {
+		return fmt.Errorf("pii scan threshold failed: highest=%s fail-on=%s", result.Summary.HighestSeverity, failOn)
+	}
+	return nil
+}
+
+func renderPIIScanText(result canon.PIIScanResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "pii scan: %s\n", filepath.ToSlash(result.Root))
+	fmt.Fprintf(&b, "files scanned: %d\n", result.FilesScanned)
+	fmt.Fprintf(&b, "findings: %d\n", result.Summary.TotalFindings)
+	fmt.Fprintf(&b, "highest severity: %s\n", result.Summary.HighestSeverity)
+	fmt.Fprintf(
+		&b,
+		"severity counts: low=%d medium=%d high=%d critical=%d\n",
+		result.Summary.FindingsBySeverity.Low,
+		result.Summary.FindingsBySeverity.Medium,
+		result.Summary.FindingsBySeverity.High,
+		result.Summary.FindingsBySeverity.Critical,
+	)
+	if result.FailOn != "" {
+		fmt.Fprintf(&b, "fail-on: %s (exceeded=%t)\n", result.FailOn, result.ThresholdExceeded)
+	}
+	if len(result.Findings) == 0 {
+		b.WriteString("no pii findings detected\n")
+		return b.String()
+	}
+	b.WriteString("findings detail:\n")
+	for _, finding := range result.Findings {
+		location := finding.File
+		if finding.Line > 0 {
+			location = fmt.Sprintf("%s:%d", finding.File, finding.Line)
+		}
+		fmt.Fprintf(&b, "  - [%s] [%s] %s (%s): %s\n", strings.ToUpper(string(finding.Severity)), finding.Category, finding.RuleID, location, finding.Detail)
+		if finding.Recommendation != "" {
+			fmt.Fprintf(&b, "      recommendation: %s\n", finding.Recommendation)
+		}
+	}
+	return b.String()
+}
+
 func renderDependencyRiskText(result canon.DependencyRiskResult) string {
 	var b strings.Builder
 
@@ -1289,6 +1373,7 @@ func printUsage() {
 	fmt.Println("  deps-risk scan Go dependencies for offline security/maintenance risks")
 	fmt.Println("  schema-evolution scan SQL migrations for potentially breaking schema changes")
 	fmt.Println("  semantic-diff explain semantic behavior changes from repository diffs")
+	fmt.Println("  pii-scan scan repository for hardcoded PII, secret credentials, and sensitive files")
 	fmt.Println("  status  show repository summary")
 	fmt.Println("  version print CLI version")
 	fmt.Println()

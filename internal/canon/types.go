@@ -356,6 +356,58 @@ type SemanticDiffResult struct {
 	Summary           SemanticDiffSummary       `json:"summary"`
 }
 
+type PIIScanSeverity string
+
+const (
+	PIIScanSeverityNone     PIIScanSeverity = "none"
+	PIIScanSeverityLow      PIIScanSeverity = "low"
+	PIIScanSeverityMedium   PIIScanSeverity = "medium"
+	PIIScanSeverityHigh     PIIScanSeverity = "high"
+	PIIScanSeverityCritical PIIScanSeverity = "critical"
+)
+
+type PIIScanOptions struct {
+	FailOn PIIScanSeverity
+}
+
+type PIIScanFinding struct {
+	RuleID         string          `json:"rule_id"`
+	Category       string          `json:"category"`
+	Severity       PIIScanSeverity `json:"severity"`
+	File           string          `json:"file"`
+	Line           int             `json:"line,omitempty"`
+	Detail         string          `json:"detail"`
+	Recommendation string          `json:"recommendation"`
+}
+
+type PIIScanSeverityCounts struct {
+	Low      int `json:"low"`
+	Medium   int `json:"medium"`
+	High     int `json:"high"`
+	Critical int `json:"critical"`
+}
+
+type PIIScanCategoryCount struct {
+	Category string `json:"category"`
+	Count    int    `json:"count"`
+}
+
+type PIIScanSummary struct {
+	TotalFindings      int                    `json:"total_findings"`
+	HighestSeverity    PIIScanSeverity        `json:"highest_severity"`
+	FindingsBySeverity PIIScanSeverityCounts  `json:"findings_by_severity"`
+	FindingsByCategory []PIIScanCategoryCount `json:"findings_by_category"`
+}
+
+type PIIScanResult struct {
+	Root              string           `json:"root"`
+	FilesScanned      int              `json:"files_scanned"`
+	Findings          []PIIScanFinding `json:"findings"`
+	Summary           PIIScanSummary   `json:"summary"`
+	FailOn            PIIScanSeverity  `json:"fail_on,omitempty"`
+	ThresholdExceeded bool             `json:"threshold_exceeded"`
+}
+
 type Index struct {
 	Specs            map[string]Spec
 	Domains          map[string][]string

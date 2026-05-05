@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -2401,4 +2402,155 @@ func writeCLISemanticDiffResponse(t *testing.T, root string, payload map[string]
 		t.Fatalf("failed writing semantic diff response: %v", err)
 	}
 	return path
+}
+
+func writeCLIPIIScanFile(t *testing.T, root string, rel string, content string) {
+	t.Helper()
+	abs := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir for %s failed: %v", rel, err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s failed: %v", rel, err)
+	}
+}
+
+func initCLIGitRepoForPIIScan(t *testing.T, root string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"init", "--quiet", "--initial-branch=main"},
+		{"-c", "user.email=test@example.test", "-c", "user.name=test", "config", "user.email", "test@example.test"},
+		{"-c", "user.email=test@example.test", "-c", "user.name=test", "config", "user.name", "test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+}
+
+func gitCommitCLIPIIScan(t *testing.T, root string, paths ...string) {
+	t.Helper()
+	addArgs := append([]string{"add", "--"}, paths...)
+	cmd := exec.Command("git", addArgs...)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add %v failed: %v\n%s", paths, err, out)
+	}
+	cmd = exec.Command("git", "-c", "user.email=test@example.test", "-c", "user.name=test", "commit", "--quiet", "-m", "fixture")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit failed: %v\n%s", err, out)
+	}
+}
+
+func TestPIIScanCommandJSONOutputDeterministicAndSchema(t *testing.T) {
+	root := t.TempDir()
+	initCLIGitRepoForPIIScan(t, root)
+	writeCLIPIIScanFile(t, root, "src/leak.go", `package src
+
+const supportEmail = "agent@example.com"
+const ssn = "123-45-6789"
+`)
+	gitCommitCLIPIIScan(t, root, "src/leak.go")
+
+	first := captureStdout(t, func() {
+		if err := run([]string{"pii-scan", "--root", root, "--json"}); err != nil {
+			t.Fatalf("pii-scan command failed: %v", err)
+		}
+	})
+	second := captureStdout(t, func() {
+		if err := run([]string{"pii-scan", "--root", root, "--json"}); err != nil {
+			t.Fatalf("pii-scan command failed: %v", err)
+		}
+	})
+	if first != second {
+		t.Fatalf("pii-scan output not deterministic\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+
+	var payload struct {
+		FilesScanned int `json:"files_scanned"`
+		Findings     []struct {
+			RuleID         string `json:"rule_id"`
+			Category       string `json:"category"`
+			Severity       string `json:"severity"`
+			File           string `json:"file"`
+			Line           int    `json:"line,omitempty"`
+			Detail         string `json:"detail"`
+			Recommendation string `json:"recommendation"`
+		} `json:"findings"`
+		Summary struct {
+			TotalFindings   int    `json:"total_findings"`
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(first), &payload); err != nil {
+		t.Fatalf("invalid pii-scan JSON: %v\n%s", err, first)
+	}
+	if payload.FilesScanned != 1 || payload.Summary.TotalFindings == 0 {
+		t.Fatalf("unexpected pii-scan summary: %+v", payload)
+	}
+	if payload.Summary.HighestSeverity != "critical" {
+		t.Fatalf("expected highest severity critical, got %s", payload.Summary.HighestSeverity)
+	}
+	for _, f := range payload.Findings {
+		if f.Recommendation == "" || f.Detail == "" || f.RuleID == "" || f.File == "" {
+			t.Fatalf("finding missing required fields: %+v", f)
+		}
+	}
+}
+
+func TestPIIScanCommandFailOnExitsNonZeroWithParseableJSON(t *testing.T) {
+	root := t.TempDir()
+	initCLIGitRepoForPIIScan(t, root)
+	writeCLIPIIScanFile(t, root, "src/leak.go", `package src
+
+const card = "4111-1111-1111-1111"
+`)
+	gitCommitCLIPIIScan(t, root, "src/leak.go")
+
+	var commandErr error
+	out := captureStdout(t, func() {
+		commandErr = run([]string{"pii-scan", "--root", root, "--json", "--fail-on", "critical"})
+	})
+	if commandErr == nil {
+		t.Fatalf("expected pii-scan to error when --fail-on critical and a critical finding exists")
+	}
+	if !strings.Contains(commandErr.Error(), "pii scan threshold failed") {
+		t.Fatalf("unexpected pii-scan error: %v", commandErr)
+	}
+	var payload struct {
+		ThresholdExceeded bool   `json:"threshold_exceeded"`
+		FailOn            string `json:"fail_on"`
+		Summary           struct {
+			HighestSeverity string `json:"highest_severity"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("invalid pii-scan JSON on fail-on path: %v\n%s", err, out)
+	}
+	if !payload.ThresholdExceeded || payload.FailOn != "critical" || payload.Summary.HighestSeverity != "critical" {
+		t.Fatalf("unexpected fail-on payload: %+v", payload)
+	}
+}
+
+func TestPIIScanCommandRejectsInvalidFailOnSeverity(t *testing.T) {
+	err := run([]string{"pii-scan", "--fail-on", "urgent"})
+	if err == nil {
+		t.Fatalf("expected error for invalid --fail-on severity")
+	}
+	if !strings.Contains(err.Error(), "invalid --fail-on severity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPIIScanCommandRejectsPositionalArgs(t *testing.T) {
+	err := run([]string{"pii-scan", "extra"})
+	if err == nil {
+		t.Fatalf("expected error for pii-scan positional arguments")
+	}
+	if !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }

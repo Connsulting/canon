@@ -56,3 +56,15 @@ func SchemaEvolutionExceedsThresholdForCLI(result SchemaEvolutionResult, thresho
 func SemanticDiffForCLI(root string, opts SemanticDiffOptions) (SemanticDiffResult, error) {
 	return SemanticDiff(root, opts)
 }
+
+func PIIScanForCLI(root string, opts PIIScanOptions) (PIIScanResult, error) {
+	return PIIScan(root, opts)
+}
+
+func ParsePIIScanSeverityForCLI(value string) (PIIScanSeverity, error) {
+	return parsePIIScanSeverity(value)
+}
+
+func PIIScanExceedsThresholdForCLI(result PIIScanResult, threshold PIIScanSeverity) bool {
+	return piiScanExceedsThreshold(result, threshold)
+}
