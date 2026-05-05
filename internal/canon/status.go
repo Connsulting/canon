@@ -1,33 +1,51 @@
 package canon
 
+const layoutRepairCommand = "canon init --ai off"
+
 type Status struct {
-	Layout                  LayoutReport
-	TotalSpecs              int
-	FeatureSpecs            int
-	TechnicalSpecs          int
-	ResolutionSpecs         int
-	Domains                 int
-	CrossDomainInteractions int
-	LedgerEntries           int
-	LedgerHeads             int
+	Root                    string       `json:"root"`
+	Healthy                 bool         `json:"healthy"`
+	Layout                  LayoutReport `json:"layout"`
+	LayoutOK                bool         `json:"layout_ok"`
+	LayoutRepairRequired    bool         `json:"layout_repair_required"`
+	LayoutRepairCommand     string       `json:"layout_repair_command,omitempty"`
+	MissingLayoutPaths      []string     `json:"missing_layout_paths"`
+	TotalSpecs              int          `json:"total_specs"`
+	FeatureSpecs            int          `json:"feature_specs"`
+	TechnicalSpecs          int          `json:"technical_specs"`
+	ResolutionSpecs         int          `json:"resolution_specs"`
+	Domains                 int          `json:"domains"`
+	CrossDomainInteractions int          `json:"cross_domain_interactions"`
+	LedgerEntries           int          `json:"ledger_entries"`
+	LedgerHeads             int          `json:"ledger_heads"`
 }
 
 func GetStatus(root string) (Status, error) {
 	layout := CheckLayout(root)
-	if layout.Health == LayoutInvalid {
-		return Status{}, LayoutError{Report: layout}
+	st := Status{
+		Root:                 root,
+		Layout:               layout,
+		LayoutOK:             layout.Health == LayoutHealthy,
+		LayoutRepairRequired: layout.Health != LayoutHealthy,
+		MissingLayoutPaths:   layout.MissingLayoutPaths(),
 	}
+	if st.LayoutRepairRequired {
+		st.LayoutRepairCommand = layoutRepairCommand
+	}
+	if layout.Health == LayoutInvalid {
+		return st, LayoutError{Report: layout}
+	}
+
 	specs, err := loadSpecs(root)
 	if err != nil {
-		return Status{}, invalidRepositoryDataError(".canon/specs", err)
+		return st, invalidRepositoryDataError(".canon/specs", err)
 	}
 	index := buildIndex(specs)
 	entries, err := LoadLedger(root)
 	if err != nil {
-		return Status{}, invalidRepositoryDataError(".canon/ledger", err)
+		return st, invalidRepositoryDataError(".canon/ledger", err)
 	}
 
-	st := Status{Layout: layout}
 	for _, spec := range specs {
 		st.TotalSpecs++
 		switch spec.Type {
@@ -43,6 +61,7 @@ func GetStatus(root string) (Status, error) {
 	st.CrossDomainInteractions = len(index.CrossDomainEdges)
 	st.LedgerEntries = len(entries)
 	st.LedgerHeads = len(ledgerHeads(entries))
+	st.Healthy = st.LayoutOK
 	return st, nil
 }
 
